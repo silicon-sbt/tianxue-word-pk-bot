@@ -143,6 +143,83 @@ python -X utf8 src/pk_bot.py --live --max 50
 
 ---
 
+## 配置 `config.toml`
+
+所有开关都在根目录这一个文件里，改完保存即生效。
+
+```toml
+[bot]
+question_seconds = 6.0      # 每题限时，用来算"还剩多少时间能问 AI"
+
+[ai]
+enabled = false             # 本地判不出来时交给 AI 兜底
+mode = "chat"               # chat = 任意 OpenAI 兼容接口；jev = 原生 Jev
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
+api_key = ""                # 用环境变量 PK_API_KEY，别写进文件
+timeout = 1.8               # 单次调用上限，实际取它和界面剩余时间里更小的
+remember = true             # 记住答案，同一个词只问一次
+
+[score]
+enabled = false
+target_accuracy = 0.70      # 目标正确率
+```
+
+### AI 兜底（`[ai]`）
+
+本地词库约 **12%** 的题判不出来——教材释义不在这本词典里。这些题原来只能猜（1/6 概率）。
+
+开启后交给 AI 判定，**用 Jev 的决策格式**：把题目和选项组成 `state` + `choices` 的
+typed decision，模型返回 `{choice, confidence, probabilities}`，我们取 `choice`。
+
+**为什么这条路可行**——Jev 这类决策模型实测 **70–500ms** 一次调用
+（[Amplitude 独立评测](https://amplitude.com/blog/jev-analysis)），
+配合读屏的 ~3.5s，6 秒限时完全放得下。
+
+说实话，第一版我按普通 LLM 的 1–3s 估过，觉得塞不进去。**是 Jev 的低延迟让这件事成立。**
+
+不会因为等 AI 而超时：超时预算取 `min(配置上限, 界面剩余秒数 - 0.4s)`，
+用界面上**真实的倒计时**动态收紧，来不及就直接走本地猜测。
+
+**最划算的一点是 `remember`**：AI 给过的答案会写进 `data/learned.json`，
+下次直接命中、不再联网。同一个词一辈子只问一次，AI 调用量会随使用逐渐趋近于零。
+
+<details>
+<summary>用原生 Jev 而不是普通 LLM</summary>
+
+```toml
+[ai]
+mode = "jev"
+base_url = "https://openrouter.ai/api/alpha"
+model = "typesafe/jev-1.13"
+```
+
+`mode = "chat"` 时我们要求模型**按 Jev 格式返回 JSON**（同样的 `answers.answer.choice`
+结构）；`mode = "jev"` 则直接调 OpenRouter 的 `/decisions` 接口。
+
+两种模式的返回结构一致，所以解析只有一份，且对模型乱输出有容错——
+返回垃圾、超时、500、连不上，全部安全降级成本地猜测。
+
+</details>
+
+### 控分（`[score]`）
+
+让最终正确率贴近目标，不至于高得扎眼（同场对手实测 66%）。
+
+用的是**比例控制**，不是「先全对、最后再错几道」——后者在榜单上看起来像突然放弃：
+
+```
+偏差 = 目标 × 已答题数 - 已答对数
+p(答对) = target + 偏差 × 0.5
+```
+
+答得太好就压低答对概率，落后就提高，全程平滑收敛。实测 130 题：
+目标 70% → 实际 70.8%。
+
+故意答错时**不会乱点**，而是挑语义第二接近的选项，看起来像真答错了。
+
+---
+
 ## 项目结构
 
 ```
@@ -150,14 +227,19 @@ python -X utf8 src/pk_bot.py --live --max 50
 查看日志.bat          运行中查看进度
 停止.bat              中途停止
 启动.bat              排错用（保留控制台输出）
+config.toml           全部开关都在这里
 src/
   pk_core.py          屏幕解析 + 双向词库判定   ← 核心逻辑
   adb_driver.py       ADB 封装（dump/点击/前台检测）
-  pk_bot.py           答题主循环 + 统计
+  pk_bot.py           答题主循环 + 控分
+  ai_judge.py         AI 兜底（Jev 决策格式）
+  config.py           config.toml 加载
   run_watch.py        等待版入口
   build_bank.py       从 ed.db 构建词库
   learn.py            未匹配题自学习
-  test_regression.py  回归测试（39 题真实抓屏）
+  test_regression.py  判定回归（39 题真实抓屏）
+  test_features.py    配置/控分/AI解析/超时预算
+  test_ai_http.py     AI 联网路径联调（本地假接口）
 data/
   wordbank.json       词库：14,030 词 / 42,942 义项
 tools/dev/           开发期诊断脚本（归档，非必需）
@@ -205,11 +287,15 @@ python -X utf8 src/learn.py --add "update=最新消息"   # 手工登记
 ## 测试
 
 ```bash
-python -X utf8 src/test_regression.py   # 39/39
+python -X utf8 src/test_regression.py   # 判定回归 39/39
 python -X utf8 src/test_parse.py        # 解析器单测
+python -X utf8 src/test_features.py     # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
+python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口，真实 HTTP）
 ```
 
-`test_regression.py` 的用例**全部来自实机抓屏**，每题都对应一个踩过的坑。改动判定逻辑后必须全绿。
+- `test_regression.py` 的用例**全部来自实机抓屏**，每题都对应一个踩过的坑。改动判定逻辑后必须全绿。
+- `test_ai_http.py` 会真的起一个 HTTP 服务，覆盖正常返回、超时、500、返回垃圾、连不上——
+  全部必须优雅降级成本地猜测，不能影响答题。
 
 ---
 

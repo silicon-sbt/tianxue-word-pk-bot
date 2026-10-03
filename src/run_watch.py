@@ -16,6 +16,7 @@ import time
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from adb_driver import Device  # noqa: E402
+from config import load as load_config  # noqa: E402
 from pk_bot import PK_PACKAGE, Runner, log, reset_log  # noqa: E402
 from pk_core import parse_screen  # noqa: E402
 
@@ -30,6 +31,7 @@ def main() -> None:
     a = ap.parse_args()
 
     reset_log()
+    cfg = load_config()
     dev = Device()
     try:
         dev.ensure_connected()
@@ -73,7 +75,7 @@ def main() -> None:
 
     # 阶段二：接管
     deadline = time.time() + a.minutes * 60
-    Runner(dev, dry).run(a.max, deadline=deadline)
+    Runner(dev, dry, cfg).run(a.max, deadline=deadline)
 
 
 if __name__ == "__main__":

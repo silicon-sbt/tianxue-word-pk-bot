@@ -406,6 +406,28 @@ class WordBank:
             b = max(b, s)
         return b
 
+    def rank_options(self, q: "Question") -> list[tuple[float, str]]:
+        """按与题面的语义接近度给选项排序，最接近的在前。
+
+        统一两个方向的打分入口，供「兜底猜测」和「控分时故意选错但像样」
+        共用。返回 [(score, 选项原文)]，分数为 0 的选项也会保留（排在后面）。
+        """
+        opts = q.option_texts()
+        if not opts:
+            return []
+        if q.direction == "en2zh":
+            senses = self.senses_of(q.gloss)
+            if not senses:
+                return [(0.0, o) for o in opts]
+            return sorted(
+                ((self._best_sense_score(o, senses, q.pos), o) for o in opts),
+                key=lambda t: -t[0],
+            )
+        ranked = self.score_options(q.gloss, opts, q.pos)
+        got = {w for _, w in ranked}
+        ranked.extend((0.0, o) for o in opts if o not in got)
+        return ranked
+
 
 
 
