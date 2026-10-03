@@ -30,7 +30,14 @@ def main() -> None:
     a = ap.parse_args()
 
     dev = Device()
-    dev.ensure_connected()
+    try:
+        dev.ensure_connected()
+    except RuntimeError as e:
+        # 无窗口启动时用户看不到控制台，必须把原因写进日志（VBS 会读日志显示），
+        # 并以非零码退出，否则启动器会误报「成功」。
+        log(f"[错误] {e}")
+        log("请检查：1) USB 线已连接  2) 手机已开 USB 调试  3) 手机上点了「允许调试」")
+        sys.exit(1)
     dry = not a.live
     log(f"=== 等待模式 === 设备 {dev.serial} dry={dry} 等待上限 {a.wait:.0f}s")
 

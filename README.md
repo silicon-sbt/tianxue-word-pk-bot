@@ -93,10 +93,17 @@ cd tianxue-word-pk-bot
 
 1. 手机 USB 连电脑，开启「开发者选项 → USB 调试」
 2. 打开天学网 App，进入 PK 房间页面
-3. 双击 **`启动.bat`**
+3. 双击 **`启动.vbs`**（纯后台运行，不弹黑框）
 4. 在手机上点「开始 PK」—— 脚本自动接管
 
 脚本会**等待**答题页出现（默认 10 分钟），不用掐时间。
+
+| 文件 | 用途 |
+|---|---|
+| `启动.vbs` | **正常用这个** — 后台运行，结束时弹结果 |
+| `查看日志.bat` | 运行中随时看答到第几题 |
+| `停止.bat` | 中途停止（只杀本项目进程） |
+| `启动.bat` | 排错用 — 保留了控制台窗口，能看完整输出 |
 
 <details>
 <summary>手动运行 / 命令行参数</summary>
@@ -126,11 +133,15 @@ python -X utf8 src/pk_bot.py --live --max 50
 ## 项目结构
 
 ```
+启动.vbs             无窗口启动器（日常用这个）
+查看日志.bat          运行中查看进度
+停止.bat              中途停止
+启动.bat              排错用（保留控制台输出）
 src/
   pk_core.py          屏幕解析 + 双向词库判定   ← 核心逻辑
   adb_driver.py       ADB 封装（dump/点击/前台检测）
   pk_bot.py           答题主循环 + 统计
-  run_watch.py        等待版入口（推荐）
+  run_watch.py        等待版入口
   build_bank.py       从 ed.db 构建词库
   learn.py            未匹配题自学习
   test_regression.py  回归测试（39 题真实抓屏）
@@ -240,6 +251,35 @@ python -X utf8 src/test_parse.py        # 解析器单测
 试过加「覆盖率惩罚」修 `像/图像` 的问题，结果**直接弄坏 3 道原本正确的题**。
 
 正确做法是在**决策层**加针对性规则，不要动全局公式。
+
+</details>
+
+<details>
+<summary><b>7. 启动脚本的编码与换行符（改这两个文件前必读）</b></summary>
+
+`启动.vbs` 和 `.bat` 对编码非常挑剔，一开始两个都写错了：
+
+**`.bat` 必须是 CRLF 换行。** 用 LF-only 存会看到命令被逐字拆散：
+
+```
+'HIDDEN' is not recognized as an internal or external command
+'e_if_visible' is not recognized as an internal or external command
+```
+
+因为 cmd.exe 按 CRLF 切分，LF-only 会让 `(` `)` 块和 `:label` 全部错位。
+
+**`.vbs` 必须是 UTF-16LE + BOM。** wscript 按系统 ANSI 码页读 `.vbs`，UTF-8 中文会乱码成空字符串。
+
+**`.bat` 里一律不写非 ASCII。** cmd.exe 按系统 ANSI 码页读 `.bat`，中文在别的语言环境下会打乱命令解析。所有面向用户的中文提示都放在 `.vbs`（UTF-16 可靠）。
+
+改完用这两条自检：
+
+```powershell
+# .bat 应为纯 ASCII + 全 CRLF
+$b=[IO.File]::ReadAllBytes("启动.bat"); ($b|?{$_ -gt 127}).Count   # 期望 0
+# .vbs 前两字节应为 FF FE
+$b=[IO.File]::ReadAllBytes("启动.vbs"); '{0:X2} {1:X2}' -f $b[0],$b[1]
+```
 
 </details>
 
