@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# 运行产物
+logs/*.txt
+logs/*.log
+logs/*.pid
+!logs/.gitkeep
+
+# 未匹配记录（每局都会增长，属于运行时数据）
+data/unknown.jsonl
+
+# 开发期诊断脚本产物
+tools/dev/__pycache__/
+
+# 系统
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 编辑器
+.vscode/
+.idea/
+*.swp
+
+# ����ѧ�� App ��ȡ�Ĵʵ����ݣ����������ݣ��� 10.4MB��
+# ��Ҫ�ؽ��ʿ�ʱ�� README ������ȡ
+data/ed.db
+
+# DSH ɳ��Ȩ����ϲ������Ŀ�޹أ�
+.acl-report/
