@@ -32,14 +32,17 @@ if errorlevel 1 (
 )
 
 REM --- check adb ---
-REM Search range mirrors src/adb_driver.py _find_adb(), otherwise this
-REM pre-flight reports a false failure when adb lives elsewhere.
-set "ADB_FOUND="
-where adb >nul 2>&1 && set "ADB_FOUND=1"
-if not defined ADB_FOUND if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe" set "ADB_FOUND=1"
-if not defined ADB_FOUND if exist "C:\platform-tools\adb.exe" set "ADB_FOUND=1"
-if not defined ADB_FOUND if exist "D:\platform-tools\adb.exe" set "ADB_FOUND=1"
-if not defined ADB_FOUND (
+REM Resolve the actual adb.exe PATH once and use that variable everywhere.
+REM Calling bare "adb" fails whenever it is installed but not on PATH
+REM (the common case for a plain Android SDK install).
+REM Search order mirrors src/adb_driver.py _find_adb().
+set "ADB="
+for %%I in (adb.exe) do if not defined ADB set "ADB=%%~$PATH:I"
+if not defined ADB if exist "%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe" set "ADB=%LOCALAPPDATA%\Android\Sdk\platform-tools\adb.exe"
+if not defined ADB if exist "C:\platform-tools\adb.exe" set "ADB=C:\platform-tools\adb.exe"
+if not defined ADB if exist "D:\platform-tools\adb.exe" set "ADB=D:\platform-tools\adb.exe"
+if not defined ADB if exist "E:\platform-tools\adb.exe" set "ADB=E:\platform-tools\adb.exe"
+if not defined ADB (
     echo [ERROR] adb.exe not found. Install Android Platform Tools and add it to PATH.
     echo         https://developer.android.com/tools/releases/platform-tools
     call :pause_if_visible
@@ -48,7 +51,7 @@ if not defined ADB_FOUND (
 
 if not defined HIDDEN (
     echo [1/3] Checking device connection...
-    adb devices
+    "%ADB%" devices
     echo.
     echo [2/3] Checking wordbank...
 )
@@ -77,13 +80,18 @@ if not defined HIDDEN (
 )
 
 if defined HIDDEN (
-    REM Hidden mode: user cannot see the console, so capture output into the
-    REM log file. The .vbs launcher reads its last line to show what happened.
-    python -X utf8 src\run_watch.py --live --max 130 --minutes 30 --wait 600 >> "logs\live_out.txt" 2>&1
+    REM Hidden mode: the console is invisible, so run_watch.py writes the log
+    REM file itself (logs\live_out.txt). Only unexpected tracebacks on stderr
+    REM need capturing here - redirecting stdout as well would duplicate
+    REM every line into the same file.
+    python -X utf8 src\run_watch.py --live --max 130 --minutes 30 --wait 600 2>> "logs\stderr.txt"
 ) else (
+    REM Visible mode: python prints to this console AND writes logs\live_out.txt,
+    REM so "????.bat" shows the same thing you see here.
     python -X utf8 src\run_watch.py --live --max 130 --minutes 30 --wait 600
 )
 set "RC=%ERRORLEVEL%"
+
 
 if not defined HIDDEN (
     echo.

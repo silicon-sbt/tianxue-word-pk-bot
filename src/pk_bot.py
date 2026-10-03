@@ -32,7 +32,11 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 BANK = ROOT / "data" / "wordbank.json"
 LEARNED = ROOT / "data" / "learned.json"
 UNKNOWN = ROOT / "data" / "unknown.jsonl"
-LOG = ROOT / "logs" / "pk.log"
+# 单一日志源：控制台看到的、查看日志.bat 打开的、启动.vbs 读的，都是这一份。
+# 只在 python 这层写，不靠 shell 的 stdout 重定向——否则「可见」和「隐藏」
+# 两种启动方式会各自留下一份内容不同、且互相重复的日志。
+LOG = ROOT / "logs" / "live_out.txt"
+STDERR_LOG = ROOT / "logs" / "stderr.txt"
 
 # 题干框（1260x2800 实测）
 PROMPT_RECT = (340, 690, 920, 850)
@@ -44,6 +48,12 @@ def log(msg: str) -> None:
     LOG.parent.mkdir(parents=True, exist_ok=True)
     with LOG.open("a", encoding="utf-8") as f:
         f.write(line + "\n")
+
+
+def reset_log() -> None:
+    """每次运行清空日志，免得上一局内容混进来（结果摘要只看本次）。"""
+    LOG.parent.mkdir(parents=True, exist_ok=True)
+    LOG.write_text("", encoding="utf-8")
 
 
 def _norm(s: str) -> str:
