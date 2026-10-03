@@ -197,6 +197,16 @@ def parse_screen(xml_text: str | bytes) -> Question | None:
         dedup.append(o)
     raw_options = dedup
 
+    # ---- 准入校验：必须是「正在答题」的画面 ----
+    # 实测坑：一局结束后的结算页会被误判成题目——
+    #   prompt='宋博涛'（人名）、选项里混进 'Score'、没有倒计时。
+    # 后果是白调一次 AI，还在结算页上乱点（可能点到「再来一局」）。
+    # 两个判据都来自实机样本：真实答题页一定有倒计时，且选项恰好 6 个左右。
+    if seconds_left is None:
+        return None
+    if not (2 <= len(raw_options) <= 8):
+        return None
+
     prompt = prompt_node[0]
     pos, gloss = split_prompt(prompt)
 
