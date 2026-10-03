@@ -1,0 +1,17 @@
+# 保证跨平台签出后启动脚本仍可用
+#
+# .bat 必须是 CRLF：cmd.exe 按 CRLF 切分命令，LF-only 会让 ( ) 块和
+# :label 全部错位（实测报 'HIDDEN' is not recognized 之类）。
+# 声明 eol=crlf 后，无论仓库内存储形式如何，签出到工作区一律是 CRLF。
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# .vbs 是 UTF-16LE + BOM，绝不能被当文本做换行符转换，否则文件损坏。
+# 声明为二进制，git 永不动它。
+*.vbs -text
+
+# 文本文件统一 LF 存储，Windows 签出时按需转换
+*.py   text
+*.md   text
+*.json text
+*.jsonl text
