@@ -34,6 +34,27 @@ DEFAULTS: dict[str, dict[str, Any]] = {
 }
 
 
+def _from_env_or_registry(name: str) -> str:
+    """先读进程环境变量，读不到再读 Windows 用户级注册表。
+
+    为什么需要注册表这一步：用 setx / SetEnvironmentVariable 设完变量后，
+    已经在运行的 explorer.exe 不会立刻更新自己的环境块，于是它双击启动的
+    .bat 里读不到——除非注销重登或重启。直接查注册表就绕开了这个坑。
+    """
+    v = os.environ.get(name)
+    if v:
+        return v
+    if os.name != "nt":
+        return ""
+    try:
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as k:
+            val, _ = winreg.QueryValueEx(k, name)
+            return str(val or "").strip()
+    except (OSError, ImportError):
+        return ""
+
+
 class Config:
     """点号取值：cfg.ai.enabled / cfg.get("score", "target_accuracy")"""
 
@@ -44,10 +65,12 @@ class Config:
                 if isinstance(values, dict):
                     self._d.setdefault(section, {}).update(values)
 
-        # api_key 允许用环境变量，避免把密钥写进文件
+        # api_key 允许用环境变量，避免把密钥写进文件（这文件是要提交的）
         ai = self._d["ai"]
         if not ai.get("api_key"):
-            ai["api_key"] = os.environ.get("PK_API_KEY", "")
+            ai["api_key"] = (_from_env_or_registry("PK_API_KEY")
+                             or _from_env_or_registry("TYPESAFE_API_KEY")
+                             or "")
 
         self._coerce()
 

@@ -152,11 +152,11 @@ python -X utf8 src/pk_bot.py --live --max 50
 question_seconds = 6.0      # 每题限时，用来算"还剩多少时间能问 AI"
 
 [ai]
-enabled = false             # 本地判不出来时交给 AI 兜底
-mode = "chat"               # chat = 任意 OpenAI 兼容接口；jev = 原生 Jev
-base_url = "https://api.deepseek.com/v1"
-model = "deepseek-chat"
-api_key = ""                # 用环境变量 PK_API_KEY，别写进文件
+enabled = true              # 本地判不出来时交给 AI 兜底
+mode = "jev"                # jev = TypeSafe 官方；chat = 任意 OpenAI 兼容接口
+base_url = "https://api.typesafe.ai/v1"
+model = "jev-latest"
+api_key = ""                # 用环境变量 TYPESAFE_API_KEY，别写进文件
 timeout = 1.8               # 单次调用上限，实际取它和界面剩余时间里更小的
 remember = true             # 记住答案，同一个词只问一次
 
@@ -172,30 +172,64 @@ target_accuracy = 0.70      # 目标正确率
 开启后交给 AI 判定，**用 Jev 的决策格式**：把题目和选项组成 `state` + `choices` 的
 typed decision，模型返回 `{choice, confidence, probabilities}`，我们取 `choice`。
 
-**为什么这条路可行**——Jev 这类决策模型实测 **70–500ms** 一次调用
-（[Amplitude 独立评测](https://amplitude.com/blog/jev-analysis)），
-配合读屏的 ~3.5s，6 秒限时完全放得下。
+**为什么这条路可行**——Jev 这类决策模型是**毫秒级**的
+（[Amplitude 独立评测](https://amplitude.com/blog/jev-analysis) 给的是 70–500ms），
+配合读屏的 ~3.5s，6 秒限时放得下。
 
 说实话，第一版我按普通 LLM 的 1–3s 估过，觉得塞不进去。**是 Jev 的低延迟让这件事成立。**
 
+**本机实测**（`api.typesafe.ai`，`jev-latest`）：**820–1020ms** 一次调用。
+比宣传值高，但 6 秒预算仍然够用。
+
 不会因为等 AI 而超时：超时预算取 `min(配置上限, 界面剩余秒数 - 0.4s)`，
 用界面上**真实的倒计时**动态收紧，来不及就直接走本地猜测。
+两条网络路径（直连 / DoH 直连真 IP）**共用同一个预算**，不会各自超时叠成两倍。
 
 **最划算的一点是 `remember`**：AI 给过的答案会写进 `data/learned.json`，
 下次直接命中、不再联网。同一个词一辈子只问一次，AI 调用量会随使用逐渐趋近于零。
 
 <details>
-<summary>用原生 Jev 而不是普通 LLM</summary>
+<summary>配置密钥（别写进 config.toml）</summary>
+
+`config.toml` 是要提交到公开仓库的，密钥请用环境变量：
+
+```bat
+setx TYPESAFE_API_KEY "apikey_你的密钥"
+```
+
+也可以临时用 `PK_API_KEY` 覆盖。key 从 https://console.typesafe.ai/keys 拿。
+
+程序会先读进程环境变量，读不到**再读 Windows 用户级注册表**——
+因为 `setx` 之后已经运行的 explorer.exe 不会立刻更新环境块，
+不读注册表的话得注销重登才能生效。
+
+</details>
+
+<details>
+<summary>本机 DNS 污染（这台机器上必须知道）</summary>
+
+`api.typesafe.ai` 在本机被解析成 `28.0.1.x`（假地址），直连必然连接重置。
+所以客户端先走正常请求，网络层一失败就改走 **DoH 查真实 IP + 直连**
+（SNI 与 Host 仍用真域名，证书才过得去）。
+
+不做这一步的话，在这台机器上 AI 兜底永远连不上，而且报错是 `ECONNRESET`，
+很容易误判成密钥问题。
+
+</details>
+
+<details>
+<summary>改用普通 LLM（不推荐，但可行）</summary>
 
 ```toml
 [ai]
-mode = "jev"
-base_url = "https://openrouter.ai/api/alpha"
-model = "typesafe/jev-1.13"
+mode = "chat"
+base_url = "https://api.deepseek.com/v1"
+model = "deepseek-chat"
 ```
 
 `mode = "chat"` 时我们要求模型**按 Jev 格式返回 JSON**（同样的 `answers.answer.choice`
-结构）；`mode = "jev"` 则直接调 OpenRouter 的 `/decisions` 接口。
+结构）；`mode = "jev"` 则直接调 TypeSafe 官方的
+`POST https://api.typesafe.ai/v1/systemone`。
 
 两种模式的返回结构一致，所以解析只有一份，且对模型乱输出有容错——
 返回垃圾、超时、500、连不上，全部安全降级成本地猜测。
