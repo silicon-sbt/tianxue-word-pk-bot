@@ -318,6 +318,14 @@ def start_screen() -> None:
     try:
         from screen_stream import ScreenStream
     except Exception as e:  # noqa: BLE001 - 缺 av 依赖时降级，不影响主功能
+        # 打包后没有控制台，光 print 用户看不到；写进 crash.log
+        import traceback
+        try:
+            (ROOT / "logs" / "screen_error.log").write_text(
+                f"{type(e).__name__}: {e}\n\n{traceback.format_exc()}",
+                encoding="utf-8")
+        except Exception:
+            pass
         print(f"[画面] 无法加载流模块（{e}），画面不可用")
         return
     _stream = ScreenStream(_adb(), _pick_serial)

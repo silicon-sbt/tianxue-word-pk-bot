@@ -162,9 +162,12 @@ def main() -> int:
     os.environ["PK_APP_ROOT"] = str(root)
     os.environ["PK_BUNDLE_ROOT"] = str(bundle)
 
-    sys.path.insert(0, str(bundle))
-    sys.path.insert(0, str(root / "src"))
-    sys.path.insert(0, str(root / "tools"))
+    # 资源目录里带 index.html 与打包进去的模块；
+    # app/ 也要加进来 —— screen_stream.py 在那个目录，main.py 会 import 它。
+    for p in (bundle, bundle / "app", root / "app", root / "src", root / "tools"):
+        sp = str(p)
+        if sp not in sys.path:
+            sys.path.insert(0, sp)
 
     try:
         import main as app_main
