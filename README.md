@@ -11,10 +11,10 @@
 [![License](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Tests](https://img.shields.io/badge/Tests-7%20suites%20%C2%B7%2039%20cases-brightgreen)]()
 
-[![Version](https://img.shields.io/badge/Version-v1.0.0-1D1D1F)](../../releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/silicon-sbt/tianxue-word-pk-bot/total?color=1D1D1F)](../../releases)
-[![Stars](https://img.shields.io/github/stars/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](../../stargazers)
-[![Last Commit](https://img.shields.io/github/last-commit/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](../../commits)
+[![Version](https://img.shields.io/badge/Version-v1.0.0-1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/silicon-sbt/tianxue-word-pk-bot/total?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases)
+[![Stars](https://img.shields.io/github/stars/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/commits)
 
 </div>
 
@@ -33,6 +33,41 @@ dump 屏幕(3.5s) -> 解析题面+选项+实时坐标 -> 离线判定(1.8ms) -> 
 ```
 
 **实测成绩**：连续两局分别 **33/34** 和 **10/10** 命中，**0 误判**。
+
+---
+
+## 下载与安装
+
+两种方式，都支持 Windows 10/11。
+
+### 桌面版（推荐）
+
+到 [Releases](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases/latest) 下载：
+
+| 文件 | 大小 | 说明 |
+|---|---|---|
+| `TianxuePK-Setup-v1.0.0.exe` | 32 MB | 安装包，双击安装，不需要管理员权限 |
+| `TianxuePK-Portable-v1.0.0.zip` | 43 MB | 便携版，解压即用，不写注册表 |
+
+装好后双击图标，会打开一个独立窗口：
+
+- 左侧导航切换「运行 / 设置」
+- 中间是手机实时画面（H.264 流，16-20 fps）
+- 右侧是答题日志，每题的判定方式都会标出来
+- 顶栏「连接手机」可以重新配置有线 / 无线 ADB
+
+**依赖**：Microsoft Edge（显示界面用，Windows 一般自带）。没有 Edge 会退回系统默认浏览器。
+
+### 命令行版
+
+不想装东西的话，直接跑源码：
+
+```bash
+git clone https://github.com/silicon-sbt/tianxue-word-pk-bot.git
+cd tianxue-word-pk-bot
+```
+
+要求 Python **3.11+**（配置用标准库 `tomllib`）。然后见下面的「快速开始」。
 
 ---
 
@@ -98,6 +133,19 @@ Jev 能给出接近 100% 置信度的正确答案。
 ---
 
 ## 快速开始
+
+### 用桌面版
+
+装好后（见上面的「下载与安装」）：
+
+1. 手机连电脑，开启「开发者选项 -> USB 调试」，或者用「无线调试」配对
+2. 双击桌面的 **天学网单词PK助手**
+3. 窗口左下角显示绿点和设备序列号，说明连上了
+4. 打开天学网 App，进入 PK 页面，点窗口顶部的 **开始**
+
+画面和日志会实时更新，不用切终端。
+
+### 用命令行
 
 **环境要求**：Windows + Python **3.11+**（配置用标准库 `tomllib`）+ 手机开启 USB 调试
 
@@ -280,29 +328,114 @@ p(答对) = target + 偏差 × 0.5
 ## 项目结构
 
 ```
-启动.vbs 无窗口启动器（日常用这个）
-查看日志.bat 运行中查看进度
-停止.bat 中途停止
-启动.bat 排错用（保留控制台输出）
-config.toml 全部开关都在这里
-src/
- pk_core.py 屏幕解析 + 双向词库判定 <- 核心逻辑
- adb_driver.py ADB 封装（dump/点击/前台检测）
- pk_bot.py 答题主循环 + 控分
- ai_judge.py AI 兜底（Jev 决策格式）
- config.py config.toml 加载
- run_watch.py 等待版入口
- build_bank.py 从 ed.db 构建词库
- learn.py 未匹配题自学习
- test_regression.py 判定回归（39 题真实抓屏）
- test_screens.py 非答题页不能误判成题目
- test_features.py 配置/控分/AI解析/超时预算
- test_ai_http.py AI 联网路径联调（本地假接口）
+启动.vbs            无窗口启动器（命令行版的日常用法）
+启动.bat            排错用（保留控制台输出）
+查看日志.bat         运行中查看进度
+停止.bat            中途停止
+config.toml         全部开关都在这里
+
+app/                         桌面界面（pywebview / Edge --app 套壳）
+ main.py                     本地 HTTP 服务 + 接口
+ launcher.py                 打包入口（路径解析 / 开窗口 / 崩溃兜底）
+ screen_stream.py            手机画面：H.264 流 + PyAV 解码
+ index.html                  单页界面
+
+src/                         核心逻辑
+ pk_core.py                  屏幕解析 + 双向词库判定
+ adb_driver.py               ADB 封装（dump / 点击 / 前台检测）
+ pk_bot.py                   答题主循环 + 控分
+ ai_judge.py                 AI 兜底（Jev 决策格式）
+ config.py                   config.toml 加载
+ run_watch.py                等待版入口
+ build_bank.py               从 ed.db 构建词库
+ learn.py                    未匹配题自学习
+ test_regression.py          判定回归（39 题真实抓屏）
+ test_screens.py             非答题页不能误判成题目
+ test_features.py            配置 / 控分 / AI解析 / 超时预算
+ test_ai_http.py             AI 联网路径联调（本地假接口）
+
 data/
- wordbank.json 词库：14,030 词 / 42,942 义项
- learned.json AI/人工补的映射（运行时生成）
-tools/dev/ 开发期诊断脚本（归档，非必需）
+ wordbank.json               词库：14,030 词 / 42,942 义项
+ learned.json                AI / 人工补的映射（运行时生成）
+
+build/                       打包配置
+ app.spec                    PyInstaller
+ installer.iss               Inno Setup 安装包
+
+assets/                      图标
+
+tools/
+ build.py                    一键打包（exe + 资源 + zip）
+ run_all_tests.py            全量回归（7 套）
+ smoke.py                    冒烟测试（真启动验接口）
+ wireless.py                 无线 ADB（配对 / 连接 / 重连）
+ adb_parse.py                统一的 adb devices 解析
+ make_icon.py                生成图标
+ upload_release.py           上传 Release 附件
+ bench_*.py                  画面性能基准
+ dev/                        开发期诊断脚本（归档，非必需）
 ```
+
+---
+
+## 打包
+
+一条命令出全部产物：
+
+```bash
+python -X utf8 tools/build.py
+```
+
+产物：
+
+| 路径 | 内容 |
+|---|---|
+| `dist/TianxuePK/` | 可直接运行的目录（68–98 MB） |
+| `E:\pk_release\TianxuePK-Portable-v1.0.0.zip` | 便携版 |
+| `E:\pk_release\TianxuePK-Setup-v1.0.0.exe` | 安装包（单独编译） |
+
+安装包要另外编译：
+
+```bash
+"C:\Users\A\AppData\Local\Programs\Inno Setup 6\ISCC.exe" build\installer.iss
+```
+
+需要先装 [Inno Setup](https://jrsoftware.org/isdl.php)，并把 `ChineseSimplified.isl` 放进去
+（Inno 默认不带中文，去 [issrc](https://github.com/jrsoftware/issrc/tree/main/Files/Languages) 下载）。
+
+### 打包时踩的坑
+
+**1. 输出目录必须在纯 ASCII 路径下**
+
+实测同一份安装包：
+
+```
+E:\code\单词pk\release\   下运行 -> 失败（退出码 1，连 /LOG 都不生成）
+换到纯英文目录运行                 -> 成功，169 文件
+```
+
+Inno 在初始化阶段就挂了，极难排查。所以 `build.py` 把产物固定输出到 `E:\pk_release`。
+
+**2. 不能用 pywebview 打包**
+
+它的 Windows 后端依赖 pythonnet，PyInstaller 打包后 CLR 找不到 .NETStandard 运行时：
+
+```
+RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize
+```
+
+重定位 `Python.Runtime.dll` 无效（是 CLR 初始化问题，不是路径问题）。
+改用 Edge `--app` 套壳：零 .NET 依赖，窗口无地址栏。
+
+**3. Edge 版本太旧时 `--app` 窗口不出来**
+
+Edge 131 的同步服务拒绝旧版本，进程起来了但不创建窗口。加 `--disable-features=msEdgeSync` 绕开。
+
+**4. 打包后画面模块静默失效**
+
+`launcher.py` 的 `sys.path` 漏了 `app/` 目录，`from screen_stream import ScreenStream` 失败，
+画面降级成 `off` 但程序照常运行。因为打包后没有控制台，错误只能写进 `logs/screen_error.log`
+才定位得到——所以现在画面模块的加载错误一律落盘。
 
 ---
 
@@ -345,12 +478,28 @@ python -X utf8 src/learn.py --add "update=最新消息" # 手工登记
 
 ## 测试
 
+一条命令跑全部：
+
 ```bash
-python -X utf8 src/test_regression.py # 判定回归 39/39
-python -X utf8 src/test_parse.py # 解析器单测
-python -X utf8 src/test_screens.py # 结算页/房间页不能误判成题目
-python -X utf8 src/test_features.py # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
-python -X utf8 src/test_ai_http.py # AI 联网路径（起本地假接口，真实 HTTP）
+python -X utf8 tools/run_all_tests.py
+```
+
+也可以单独跑：
+
+```bash
+python -X utf8 src/test_regression.py   # 判定回归 39/39
+python -X utf8 src/test_parse.py        # 解析器单测
+python -X utf8 src/test_screens.py      # 结算页/房间页不能误判成题目
+python -X utf8 src/test_features.py     # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
+python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口，真实 HTTP）
+python -X utf8 app/test_backend.py      # 桌面后端 HTTP 接口
+python -X utf8 app/test_screen_stream.py # 画面流（注入假 adb，不依赖真机）
+```
+
+冒烟测试（真启动桌面程序，验接口和稳定性，手机有没有连都能跑）：
+
+```bash
+python -X utf8 tools/smoke.py
 ```
 
 - `test_regression.py` 的用例**全部来自实机抓屏**，每题都对应一个踩过的坑。改动判定逻辑后必须全绿。
@@ -475,6 +624,8 @@ $b=[IO.File]::ReadAllBytes("启动.vbs"); '{0:X2} {1:X2}' -f $b[0],$b[1]
 - **dump 耗时 2.4–8s 波动** —— 6 秒限时通常够用，偶尔冲到 8s 会漏掉那一题。想更稳可以用 `screencap`（0.6s）替代，但要自己做图像识别。
 - **AI 兜底只在时间够时生效** —— 超时预算按界面倒计时动态收紧，来不及就直接猜。想提高命中就靠 `remember` 慢慢把词库补起来。
 - **必须在答题页才工作** —— 脚本会等待，但不会替你点「开始 PK」。
+- **画面在静态页上帧率很低** —— H.264 只编变化区域，手机屏幕不动时几乎不产帧（这是正常的）。答题时倒计时和选项一直在动，所以实际是 16–20 fps。
+- **桌面版依赖 Edge** —— 用 Edge 的独立窗口模式显示界面。没有 Edge 会退回系统默认浏览器（体验差但能用）。
 
 ---
 
