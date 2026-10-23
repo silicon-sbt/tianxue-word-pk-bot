@@ -1,6 +1,6 @@
 # ============================================================
-#  天学网单词PK助手 — 配置
-#  改完保存即生效，不用动代码。
+# 天学网单词PK助手 — 配置
+# 改完保存即生效，不用动代码。
 # ============================================================
 
 [bot]
@@ -17,17 +17,17 @@ question_seconds = 6.0
 enabled = true
 
 # chat = 任何 OpenAI 兼容接口（DeepSeek / OpenAI / 本地 Ollama）
-# jev  = TypeSafe 官方 Jev 决策模型，最贴合本用途
+# jev = TypeSafe 官方 Jev 决策模型，最贴合本用途
 mode = "jev"
 
 # jev 用官方端点；chat 模式才换成像 https://api.deepseek.com/v1
 base_url = "https://api.typesafe.ai/v1"
-model    = "jev-latest"
+model = "jev-latest"
 
-# ⚠ 别把密钥写在这里——本文件是要提交到公开仓库的。
-#   已用用户级环境变量 TYPESAFE_API_KEY（配置会自己读）。
-#   也可以临时用 PK_API_KEY 覆盖。
-api_key  = ""
+# 别把密钥写在这里——本文件是要提交到公开仓库的。
+# 已用用户级环境变量 TYPESAFE_API_KEY（配置会自己读）。
+# 也可以临时用 PK_API_KEY 覆盖。
+api_key = ""
 
 # 单次调用上限（秒）。实际会取「这个值」和「界面剩余时间」里更小的那个。
 # 本机实测 Jev 一次约 0.8-0.9 秒。
@@ -41,4 +41,4 @@ remember = true
 [score]
 # 控分：让最终正确率贴近目标，不至于高得扎眼。
 enabled = false
-target_accuracy = 0.70     # 目标正确率，0-1（写 70 也会被当成 70%）
+target_accuracy = 0.70 # 目标正确率，0-1（写 70 也会被当成 70%）

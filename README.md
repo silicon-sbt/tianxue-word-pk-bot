@@ -21,9 +21,9 @@
 这个脚本通过 ADB 读取 Android 无障碍树拿到题面和选项，用**离线词典**判定答案，再自动点击。
 
 ```
-dump 屏幕(3.5s) ──► 解析题面+选项+实时坐标 ──► 离线判定(1.8ms) ──► 点击(0.16s)
-                                                      │
-                                              判不出来时 ──► Jev 兜底(~0.9s)
+dump 屏幕(3.5s) -> 解析题面+选项+实时坐标 -> 离线判定(1.8ms) -> 点击(0.16s)
+ |
+ 判不出来时 -> Jev 兜底(~0.9s)
 ```
 
 **实测成绩**：连续两局分别 **33/34** 和 **10/10** 命中，**0 误判**。
@@ -70,16 +70,16 @@ Jev 能给出接近 100% 置信度的正确答案。
 
 | 题面 | 词典里的写法 | 字面相同？ |
 |---|---|---|
-| `adj.宏伟的` | grand = **雄伟的** | ✗ |
-| `adj.异常的` | unusual = **不寻常的** | ✗ |
-| `v.破坏` | destroy = **毁坏**、**摧毁** | ✗ |
+| `adj.宏伟的` | grand = **雄伟的** | |
+| `adj.异常的` | unusual = **不寻常的** | |
+| `v.破坏` | destroy = **毁坏**、**摧毁** | |
 
 直接查表全部落空。所以改用**反向打分**：拿每个选项词的**全部词典义项**，与题面比中文相似度，取最高分。
 
 三层机制叠加：
 
-1. **同义词归一化** —— 人工搭桥「异常 ↔ 不寻常」「宏伟 ↔ 雄伟」
-2. **汉字相似度** —— Jaccard + 包含关系（`活的` ⊂ `活着的`）
+1. **同义词归一化** —— 人工搭桥「异常 <-> 不寻常」「宏伟 <-> 雄伟」
+2. **汉字相似度** —— Jaccard + 包含关系（`活的` 属于 `活着的`）
 3. **领先裕度判定** —— 分数不高但明显领先第二名时也接受
 
 题型还是**双向**的，两个方向都要处理：
@@ -100,7 +100,7 @@ git clone https://github.com/silicon-sbt/tianxue-word-pk-bot.git
 cd tianxue-word-pk-bot
 ```
 
-1. 手机 USB 连电脑，开启「开发者选项 → USB 调试」
+1. 手机 USB 连电脑，开启「开发者选项 -> USB 调试」
 2. 打开天学网 App，进入 PK 房间页面
 3. 双击 **`启动.vbs`**（纯后台运行，不弹黑框）
 4. 在手机上点「开始 PK」—— 脚本自动接管
@@ -166,20 +166,20 @@ python -X utf8 src/pk_bot.py --live --max 50
 
 ```toml
 [bot]
-question_seconds = 6.0      # 每题限时，用来算"还剩多少时间能问 AI"
+question_seconds = 6.0 # 每题限时，用来算"还剩多少时间能问 AI"
 
 [ai]
-enabled = true              # 本地判不出来时交给 AI 兜底
-mode = "jev"                # jev = TypeSafe 官方；chat = 任意 OpenAI 兼容接口
+enabled = true # 本地判不出来时交给 AI 兜底
+mode = "jev" # jev = TypeSafe 官方；chat = 任意 OpenAI 兼容接口
 base_url = "https://api.typesafe.ai/v1"
 model = "jev-latest"
-api_key = ""                # 用环境变量 TYPESAFE_API_KEY，别写进文件
-timeout = 1.8               # 单次调用上限，实际取它和界面剩余时间里更小的
-remember = true             # 记住答案，同一个词只问一次
+api_key = "" # 用环境变量 TYPESAFE_API_KEY，别写进文件
+timeout = 1.8 # 单次调用上限，实际取它和界面剩余时间里更小的
+remember = true # 记住答案，同一个词只问一次
 
 [score]
 enabled = false
-target_accuracy = 0.70      # 目标正确率
+target_accuracy = 0.70 # 目标正确率
 ```
 
 ### AI 兜底（`[ai]`）
@@ -265,7 +265,7 @@ p(答对) = target + 偏差 × 0.5
 ```
 
 答得太好就压低答对概率，落后就提高，全程平滑收敛。实测 130 题：
-目标 70% → 实际 70.8%。
+目标 70% -> 实际 70.8%。
 
 故意答错时**不会乱点**，而是挑语义第二接近的选项，看起来像真答错了。
 
@@ -274,28 +274,28 @@ p(答对) = target + 偏差 × 0.5
 ## 项目结构
 
 ```
-启动.vbs             无窗口启动器（日常用这个）
-查看日志.bat          运行中查看进度
-停止.bat              中途停止
-启动.bat              排错用（保留控制台输出）
-config.toml           全部开关都在这里
+启动.vbs 无窗口启动器（日常用这个）
+查看日志.bat 运行中查看进度
+停止.bat 中途停止
+启动.bat 排错用（保留控制台输出）
+config.toml 全部开关都在这里
 src/
-  pk_core.py          屏幕解析 + 双向词库判定   ← 核心逻辑
-  adb_driver.py       ADB 封装（dump/点击/前台检测）
-  pk_bot.py           答题主循环 + 控分
-  ai_judge.py         AI 兜底（Jev 决策格式）
-  config.py           config.toml 加载
-  run_watch.py        等待版入口
-  build_bank.py       从 ed.db 构建词库
-  learn.py            未匹配题自学习
-  test_regression.py  判定回归（39 题真实抓屏）
-  test_screens.py     非答题页不能误判成题目
-  test_features.py    配置/控分/AI解析/超时预算
-  test_ai_http.py     AI 联网路径联调（本地假接口）
+ pk_core.py 屏幕解析 + 双向词库判定 <- 核心逻辑
+ adb_driver.py ADB 封装（dump/点击/前台检测）
+ pk_bot.py 答题主循环 + 控分
+ ai_judge.py AI 兜底（Jev 决策格式）
+ config.py config.toml 加载
+ run_watch.py 等待版入口
+ build_bank.py 从 ed.db 构建词库
+ learn.py 未匹配题自学习
+ test_regression.py 判定回归（39 题真实抓屏）
+ test_screens.py 非答题页不能误判成题目
+ test_features.py 配置/控分/AI解析/超时预算
+ test_ai_http.py AI 联网路径联调（本地假接口）
 data/
-  wordbank.json       词库：14,030 词 / 42,942 义项
-  learned.json        AI/人工补的映射（运行时生成）
-tools/dev/           开发期诊断脚本（归档，非必需）
+ wordbank.json 词库：14,030 词 / 42,942 义项
+ learned.json AI/人工补的映射（运行时生成）
+tools/dev/ 开发期诊断脚本（归档，非必需）
 ```
 
 ---
@@ -327,8 +327,8 @@ python -X utf8 src/build_bank.py
 判定不了的题会记进 `data/unknown.jsonl`：
 
 ```bash
-python -X utf8 src/learn.py --report                 # 看待补清单
-python -X utf8 src/learn.py --add "update=最新消息"   # 手工登记
+python -X utf8 src/learn.py --report # 看待补清单
+python -X utf8 src/learn.py --add "update=最新消息" # 手工登记
 ```
 
 登记后写入 `data/learned.json`，下次直接命中。
@@ -340,17 +340,17 @@ python -X utf8 src/learn.py --add "update=最新消息"   # 手工登记
 ## 测试
 
 ```bash
-python -X utf8 src/test_regression.py   # 判定回归 39/39
-python -X utf8 src/test_parse.py        # 解析器单测
-python -X utf8 src/test_screens.py      # 结算页/房间页不能误判成题目
-python -X utf8 src/test_features.py     # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
-python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口，真实 HTTP）
+python -X utf8 src/test_regression.py # 判定回归 39/39
+python -X utf8 src/test_parse.py # 解析器单测
+python -X utf8 src/test_screens.py # 结算页/房间页不能误判成题目
+python -X utf8 src/test_features.py # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
+python -X utf8 src/test_ai_http.py # AI 联网路径（起本地假接口，真实 HTTP）
 ```
 
 - `test_regression.py` 的用例**全部来自实机抓屏**，每题都对应一个踩过的坑。改动判定逻辑后必须全绿。
 - `test_screens.py` 锁住「非答题页不能被当成题目」——被这个坑坑过一次，见踩坑记录 8。
 - `test_ai_http.py` 会真的起一个 HTTP 服务，覆盖正常返回、超时、500、返回垃圾、连不上——
-  全部必须优雅降级成本地猜测，不能影响答题。
+ 全部必须优雅降级成本地猜测，不能影响答题。
 
 ---
 
@@ -386,14 +386,14 @@ python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口�
 <details>
 <summary><b>4. 单字子串不是匹配</b></summary>
 
-`像`（resemble）是 `图像` 的子串，会被误判成答案。**子串匹配要求两边都 ≥2 字**。
+`像`（resemble）是 `图像` 的子串，会被误判成答案。**子串匹配要求两边都 >=2 字**。
 
 </details>
 
 <details>
 <summary><b>5. 词库里的垃圾义项</b></summary>
 
-`vi. & vt.` 这类纯词性串被 `/` 切开后会留下 `&`，与选项解析串味，造成 `tend → 举起` 误判。构建时已过滤。
+`vi. & vt.` 这类纯词性串被 `/` 切开后会留下 `&`，与选项解析串味，造成 `tend -> 举起` 误判。构建时已过滤。
 
 另外 `（建筑物，城镇等的）地点` 会被括号内的逗号切碎，需要**括号感知切分**。
 
@@ -430,7 +430,7 @@ python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口�
 
 ```powershell
 # .bat 应为纯 ASCII + 全 CRLF
-$b=[IO.File]::ReadAllBytes("启动.bat"); ($b|?{$_ -gt 127}).Count   # 期望 0
+$b=[IO.File]::ReadAllBytes("启动.bat"); ($b|?{$_ -gt 127}).Count # 期望 0
 # .vbs 前两字节应为 FF FE
 $b=[IO.File]::ReadAllBytes("启动.vbs"); '{0:X2} {1:X2}' -f $b[0],$b[1]
 ```
@@ -487,7 +487,7 @@ $b=[IO.File]::ReadAllBytes("启动.vbs"); '{0:X2} {1:X2}' -f $b[0],$b[1]
 
 ## 赞赏
 
-如果这个项目帮到了你，可以请我喝杯奶茶 🧋
+如果这个项目帮到了你，可以请我喝杯奶茶
 
 <img src="assets/donate.jpg" width="300" alt="微信赞赏码">
 

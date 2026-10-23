@@ -1,0 +1,959 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>天学网单词PK助手</title>
+<style>
+ /* 视觉方向：Ente / Apple 式克制。
+ 浅底、无边框、黑色主按钮、超大留白、颜色极省 —— 只有状态点用色。 */
+ :root{
+ --bg:#FBFBFD;
+ --surface:#FFFFFF;
+ --surface-2:#F5F5F7;
+ --line:#E8E8ED;
+ --line-2:#DCDCE2;
+ --fg:#1D1D1F;
+ --fg-2:#6E6E73;
+ --fg-3:#A1A1A6;
+ --accent:#1D1D1F;
+ --ok:#1DB954;
+ --ai:#7B61FF;
+ --guess:#E8A33D;
+ --bad:#E5484D;
+ --r:14px;
+ --r-sm:9px;
+ --ease:cubic-bezier(.16,1,.3,1);
+ --mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+ }
+ *{box-sizing:border-box;margin:0;padding:0}
+ html,body{height:100%}
+ body{
+ background:var(--bg);color:var(--fg);overflow:hidden;
+ font:14px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",
+ "PingFang SC","Microsoft YaHei",sans-serif;
+ display:flex;flex-direction:column;
+ -webkit-font-smoothing:antialiased;
+ -webkit-user-select:none;user-select:none;
+ }
+ ::-webkit-scrollbar{width:10px;height:10px}
+ ::-webkit-scrollbar-thumb{background:#D6D6DB;border-radius:99px;border:3px solid var(--bg)}
+ ::-webkit-scrollbar-thumb:hover{background:#C3C3C9}
+ ::-webkit-scrollbar-track{background:transparent}
+
+ /* 顶栏：无底色、无边框，只有一条极淡的分隔 */
+ header{
+ height:60px;flex:0 0 auto;display:flex;align-items:center;gap:10px;
+ padding:0 28px;background:var(--bg);
+ }
+ .logo{
+ width:22px;height:22px;border-radius:6px;flex:0 0 auto;
+ background:var(--fg);color:#fff;display:grid;place-items:center;
+ font-size:10px;font-weight:700;letter-spacing:-.3px;
+ }
+ .brand{font-weight:600;font-size:14.5px;letter-spacing:-.2px}
+ .spacer{flex:1}
+
+ .pill{
+ display:flex;align-items:center;gap:7px;font-size:12.5px;
+ color:var(--fg-2);padding:6px 12px;border-radius:99px;
+ cursor:pointer;transition:background .18s var(--ease);
+ }
+ .pill:hover{background:var(--surface-2)}
+ .dot{width:7px;height:7px;border-radius:50%;background:#C7C7CC;flex:0 0 auto;
+ transition:.25s var(--ease)}
+ .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(29,185,84,.14)}
+ .dot.err{background:var(--bad)}
+
+ button{
+ font:inherit;font-size:13px;font-weight:500;letter-spacing:-.1px;
+ color:var(--fg);background:var(--surface);border:1px solid var(--line);
+ border-radius:var(--r-sm);padding:8px 18px;cursor:pointer;
+ transition:all .18s var(--ease);white-space:nowrap;
+ }
+ button:hover:not(:disabled){background:var(--surface-2);border-color:var(--line-2)}
+ button:active:not(:disabled){transform:scale(.98)}
+ button:disabled{opacity:.32;cursor:default}
+ button.primary{
+ background:var(--fg);border-color:var(--fg);color:#fff;
+ }
+ button.primary:hover:not(:disabled){background:#000;border-color:#000}
+ button.danger{color:var(--bad);border-color:var(--line)}
+ button.danger:hover:not(:disabled){background:#FFF1F1;border-color:#FFD5D6}
+ button.ghost{background:transparent;border-color:transparent;color:var(--fg-2)}
+ button.ghost:hover:not(:disabled){background:var(--surface-2);color:var(--fg)}
+
+ /* 主体：两栏，中间一条极细线 */
+ main{flex:1;display:flex;min-height:0;gap:0;padding:0 28px 0}
+ .screen{
+ flex:0 0 372px;background:var(--surface-2);border-radius:var(--r);
+ position:relative;display:flex;align-items:center;justify-content:center;
+ overflow:hidden;margin-bottom:20px;
+ }
+ .screen .ph{color:var(--fg-3);font-size:12.5px;text-align:center;line-height:2}
+ .screen .ph b{display:block;color:var(--fg-2);font-size:13px;margin-bottom:3px;font-weight:500}
+ .badge{
+ position:absolute;top:14px;left:14px;font-size:10px;letter-spacing:.8px;
+ font-weight:600;color:var(--fg-3);text-transform:uppercase;
+ }
+ .right{flex:1;display:flex;flex-direction:column;min-width:0;padding-left:28px;padding-bottom:20px}
+
+ /* 统计：不要卡片，只要数字和极小的标签 */
+ .stats{display:flex;gap:40px;padding:8px 0 22px;flex:0 0 auto}
+ .stat .n{
+ font-size:30px;font-weight:600;letter-spacing:-1.2px;
+ font-variant-numeric:tabular-nums;line-height:1.05;
+ }
+ .stat .l{font-size:11px;color:var(--fg-3);margin-top:4px;letter-spacing:.2px}
+ .stat.h .n{color:var(--fg)} .stat.a .n{color:var(--ai)}
+ .stat.g .n{color:var(--guess)} .stat.f .n{color:var(--bad)}
+
+ .logwrap{
+ flex:1;overflow:auto;padding:18px 0 0;border-top:1px solid var(--line);
+ font:12.5px/1.85 var(--mono);user-select:text;
+ -webkit-user-select:text;
+ }
+ .ln{white-space:pre-wrap;word-break:break-all;color:var(--fg-3);padding:1px 0}
+ .ln.hit{color:#2C7A54} .ln.ai{color:var(--ai)}
+ .ln.guess{color:#9A6B1E} .ln.fake{color:var(--bad)} .ln.err{color:var(--bad)}
+ .ln .t{color:#C4C4C9;margin-right:10px;font-variant-numeric:tabular-nums}
+ .empty{color:var(--fg-3);font-size:12.5px;padding:40px 0;text-align:center;
+ font-family:-apple-system,sans-serif}
+
+ footer{
+ flex:0 0 auto;height:56px;display:flex;align-items:center;gap:18px;
+ padding:0 28px;background:var(--bg);border-top:1px solid var(--line);
+ font-size:12.5px;color:var(--fg-2);
+ }
+ .hint{color:var(--fg-3);font-size:12px}
+ .switch{display:flex;align-items:center;gap:9px;cursor:pointer;user-select:none}
+ .switch input{display:none}
+ .track{width:36px;height:21px;border-radius:99px;background:#E3E3E8;
+ position:relative;transition:.22s var(--ease);flex:0 0 auto}
+ .track::after{content:"";position:absolute;top:2px;left:2px;width:17px;height:17px;
+ border-radius:50%;background:#fff;transition:.22s var(--ease);
+ box-shadow:0 1px 3px rgba(0,0,0,.16)}
+ .switch input:checked + .track{background:var(--fg)}
+ .switch input:checked + .track::after{left:17px}
+
+ /* 弹层 */
+ .veil{
+ position:fixed;inset:0;background:rgba(250,250,252,.82);z-index:60;
+ display:none;align-items:center;justify-content:center;
+ backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);
+ }
+ .veil.show{display:flex}
+ .card{
+ background:var(--surface);border:1px solid var(--line);
+ border-radius:20px;display:flex;flex-direction:column;overflow:hidden;
+ max-height:min(90vh,820px);
+ box-shadow:0 1px 2px rgba(0,0,0,.03),0 20px 60px -12px rgba(0,0,0,.12);
+ animation:pop .24s var(--ease);
+ }
+ .card > *{flex:0 0 auto}
+ .card > .cfg-body,.card > .panel-body{flex:1 1 auto;min-height:0;overflow:auto}
+ @keyframes pop{from{opacity:0;transform:translateY(10px) scale(.99)}to{opacity:1;transform:none}}
+
+ /* 引导 */
+ .card.onboard{width:min(760px,92vw)}
+ .onb-hd{padding:34px 40px 8px}
+ .onb-hd h2{font-size:21px;font-weight:600;letter-spacing:-.5px}
+ .onb-hd p{color:var(--fg-2);font-size:13px;margin-top:9px;line-height:1.7}
+ .choices{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:26px 40px 8px}
+ .choice{
+ border:1px solid var(--line);border-radius:var(--r);padding:24px 22px;
+ cursor:pointer;background:var(--surface);transition:all .2s var(--ease);
+ position:relative;
+ }
+ .choice:hover{border-color:var(--line-2);background:#FCFCFD}
+ .choice.sel{border-color:var(--fg);box-shadow:0 0 0 1px var(--fg) inset}
+ .choice .ico{font-size:20px;margin-bottom:14px;opacity:.85}
+ .choice .tt{font-size:14.5px;font-weight:600;margin-bottom:6px;letter-spacing:-.2px}
+ .choice .dd{font-size:12.5px;color:var(--fg-2);line-height:1.7}
+ .choice .tag{
+ position:absolute;top:18px;right:18px;font-size:10px;font-weight:600;
+ letter-spacing:.3px;color:var(--fg-3);
+ }
+ .choice .tag.good{color:var(--ok)}
+
+ .panel-body{padding:8px 40px 24px}
+ .field{margin-bottom:16px}
+ .field label{display:block;font-size:12.5px;color:var(--fg-2);margin-bottom:8px;font-weight:500}
+ .field .row{display:flex;gap:10px}
+ input[type=text],input[type=password],textarea{
+ width:100%;background:var(--surface);color:var(--fg);
+ border:1px solid var(--line);border-radius:var(--r-sm);padding:10px 14px;
+ font:13.5px/1.5 inherit;outline:none;transition:border-color .18s var(--ease);
+ }
+ input:focus,textarea:focus{border-color:var(--fg-2)}
+ input::placeholder{color:var(--fg-3)}
+ .note{font-size:12px;color:var(--fg-3);line-height:1.75;margin-top:8px}
+ .note code{
+ background:var(--surface-2);padding:2px 6px;border-radius:5px;
+ font-family:var(--mono);font-size:11.5px;color:var(--fg-2);
+ }
+ .steps{
+ background:var(--surface-2);border-radius:var(--r);padding:20px 24px;
+ margin-bottom:18px;
+ }
+ .steps ol{padding-left:20px;font-size:13px;color:var(--fg-2);line-height:2.1}
+ .steps b{color:var(--fg);font-weight:600}
+ .onb-ft{padding:10px 40px 30px;display:flex;align-items:center;gap:10px}
+ .msg{font-size:12.5px;margin-right:auto}
+ .msg.ok{color:var(--ok)} .msg.err{color:var(--bad)} .msg.dim{color:var(--fg-3)}
+
+ /* 设置 */
+ .card.cfg{width:min(660px,94vw)}
+ .cfg-hd{padding:28px 34px 18px;display:flex;align-items:center;gap:11px}
+ .cfg-hd h2{font-size:19px;font-weight:600;letter-spacing:-.4px}
+ .cfg-hd .sub{font-size:12px;color:var(--fg-3)}
+ .badge-live{
+ font-size:10.5px;padding:3px 9px;border-radius:99px;font-weight:600;
+ background:#EAF7EE;color:#177A45;
+ }
+ .cfg-body{padding:0 34px 6px}
+
+ .grp{padding:6px 0 12px;border-top:1px solid var(--line)}
+ .grp:first-child{border-top:0;padding-top:0}
+ .grp .gh{
+ font-size:11px;color:var(--fg-3);letter-spacing:.9px;text-transform:uppercase;
+ font-weight:600;margin:18px 0 4px;
+ }
+ .kv{
+ display:flex;align-items:center;justify-content:space-between;gap:20px;
+ padding:13px 0;border-bottom:1px solid var(--line);min-height:50px;
+ }
+ .kv:last-of-type{border-bottom:0}
+ .kv .k{font-size:13.5px;flex:1;min-width:0;letter-spacing:-.1px}
+ .kv .k em{
+ display:block;font-style:normal;font-size:12px;color:var(--fg-3);
+ margin-top:3px;line-height:1.55;
+ }
+ .inp{
+ flex:0 0 250px;width:250px;background:var(--surface);color:var(--fg);
+ border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px;
+ font:13px/1.5 inherit;outline:none;transition:border-color .18s var(--ease);
+ }
+ .inp:focus{border-color:var(--fg-2)}
+ .inp.num{flex:0 0 88px;width:88px;text-align:center;font-variant-numeric:tabular-nums}
+ .sel{
+ flex:0 0 250px;width:250px;background:var(--surface);color:var(--fg);
+ border:1px solid var(--line);border-radius:var(--r-sm);padding:8px 12px;
+ font:13px/1.5 inherit;outline:none;cursor:pointer;
+ }
+ .sel:focus{border-color:var(--fg-2)}
+
+ .sw{display:flex;align-items:center;cursor:pointer;flex:0 0 auto}
+ .sw input{display:none}
+ .sw .tk{
+ width:38px;height:22px;border-radius:99px;background:#E3E3E8;
+ position:relative;transition:.22s var(--ease);display:block;
+ }
+ .sw .tk::after{
+ content:"";position:absolute;top:2px;left:2px;width:18px;height:18px;
+ border-radius:50%;background:#fff;transition:.22s var(--ease);
+ box-shadow:0 1px 3px rgba(0,0,0,.16);
+ }
+ .sw input:checked + .tk{background:var(--fg)}
+ .sw input:checked + .tk::after{left:18px}
+
+ .range{display:flex;align-items:center;gap:14px;flex:0 0 auto}
+ .range input[type=range]{
+ width:180px;accent-color:var(--fg);cursor:pointer;
+ }
+ .range b{
+ font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--fg);
+ min-width:44px;text-align:right;font-weight:600;letter-spacing:-.2px;
+ }
+
+ .cfg-foot{
+ padding:16px 34px 26px;display:flex;align-items:center;gap:10px;
+ }
+ /* ========== 布局骨架：左侧窄导航 + 右侧内容流 ========== */
+ .shell{display:flex;height:100%;width:100%}
+
+ .rail{
+ flex:0 0 74px;background:var(--surface);border-right:1px solid var(--line);
+ display:flex;flex-direction:column;align-items:center;
+ padding:18px 0 14px;gap:6px;
+ }
+ .rail-brand{margin-bottom:20px}
+ .logo{
+ width:30px;height:30px;border-radius:9px;display:grid;place-items:center;
+ background:var(--fg);color:#fff;font-size:11px;font-weight:700;letter-spacing:-.4px;
+ }
+ .rail-nav{display:flex;flex-direction:column;gap:4px;width:100%;align-items:center}
+ .nav-item{
+ width:52px;padding:11px 0;border-radius:11px;cursor:pointer;
+ display:flex;flex-direction:column;align-items:center;gap:5px;
+ color:var(--fg-3);transition:all .18s var(--ease);user-select:none;
+ }
+ .nav-item svg{width:19px;height:19px;flex:0 0 auto}
+ .nav-item span{font-size:10.5px;font-weight:500;letter-spacing:.1px}
+ .nav-item:hover{background:var(--surface-2);color:var(--fg-2)}
+ .nav-item.active{background:var(--surface-2);color:var(--fg)}
+ .rail-foot{
+ margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:5px;
+ font-size:9.5px;color:var(--fg-3);text-align:center;padding:0 4px;
+ }
+ .rail-foot .dot{width:8px;height:8px}
+
+ .content{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+ .view{
+ display:none;flex-direction:column;height:100%;overflow:auto;
+ padding:26px 34px 24px;gap:16px;
+ }
+ .view.active{display:flex}
+
+ .page-hd{
+ display:flex;align-items:center;gap:14px;flex:0 0 auto;margin-bottom:4px;
+ }
+ .page-hd h1{
+ font-size:26px;font-weight:600;letter-spacing:-.9px;line-height:1.1;
+ }
+ .page-actions{margin-left:auto;display:flex;align-items:center;gap:9px}
+ .spacer{flex:1}
+
+ /* 卡片块：白底 + 极淡描边 + 大圆角 */
+ .card-block{
+ background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+ padding:20px 24px 6px;flex:0 0 auto;
+ }
+ .card-block.grow{flex:1 1 auto;display:flex;flex-direction:column;
+ min-height:220px;padding-bottom:0}
+ .blk-hd{
+ display:flex;align-items:center;gap:12px;margin-bottom:16px;
+ }
+ .blk-title{font-size:13px;font-weight:600;letter-spacing:.1px}
+ .blk-sub{font-size:11.5px;color:var(--fg-3);margin-left:auto}
+
+ /* KPI：横排大数字 */
+ .kpi-row{display:flex;gap:0;padding-bottom:18px}
+ .kpi{flex:1;min-width:0}
+ .kpi .n{
+ font-size:27px;font-weight:600;letter-spacing:-1.1px;
+ font-variant-numeric:tabular-nums;line-height:1.05;color:var(--fg);
+ }
+ .kpi .l{font-size:11.5px;color:var(--fg-3);margin-top:5px;letter-spacing:.1px}
+
+ /* 日志：卡片内，无外框 */
+ .logwrap{
+ flex:1;overflow:auto;padding:0 0 18px;margin:0 -4px;
+ font:12.5px/1.85 var(--mono);user-select:text;-webkit-user-select:text;
+ }
+ .ln{white-space:pre-wrap;word-break:break-all;color:var(--fg-3);padding:1px 4px;border-radius:4px}
+ .ln:hover{background:var(--surface-2)}
+ .ln.hit{color:#2C7A54} .ln.ai{color:var(--ai)}
+ .ln.guess{color:#9A6B1E} .ln.fake{color:var(--bad)} .ln.err{color:var(--bad)}
+ .ln .t{color:#C0C0C6;margin-right:10px;font-variant-numeric:tabular-nums}
+ .empty{
+ color:var(--fg-3);font-size:12.5px;padding:48px 0;text-align:center;
+ font-family:-apple-system,sans-serif;
+ }
+
+ /* 设置项：行式，左右对齐 */
+ .kv{
+ display:flex;align-items:center;justify-content:space-between;gap:24px;
+ padding:14px 0;border-top:1px solid var(--line);min-height:54px;
+ }
+ .kv .k{font-size:13.5px;flex:1;min-width:0;letter-spacing:-.1px}
+ .kv .k em{
+ display:block;font-style:normal;font-size:12px;color:var(--fg-3);
+ margin-top:3px;line-height:1.55;
+ }
+ .inp{
+ flex:0 0 260px;width:260px;background:var(--surface-2);color:var(--fg);
+ border:1px solid transparent;border-radius:var(--r-sm);padding:9px 13px;
+ font:13px/1.5 inherit;outline:none;transition:all .18s var(--ease);
+ }
+ .inp:hover{background:#EFEFF2}
+ .inp:focus{background:var(--surface);border-color:var(--fg-2)}
+ .inp.num{flex:0 0 84px;width:84px;text-align:center;font-variant-numeric:tabular-nums}
+ .sel{
+ flex:0 0 260px;width:260px;background:var(--surface-2);color:var(--fg);
+ border:1px solid transparent;border-radius:var(--r-sm);padding:9px 13px;
+ font:13px/1.5 inherit;outline:none;cursor:pointer;
+ }
+ .sel:focus{background:var(--surface);border-color:var(--fg-2)}
+
+ .sw{display:flex;align-items:center;cursor:pointer;flex:0 0 auto}
+ .sw input{display:none}
+ .sw .tk{
+ width:39px;height:23px;border-radius:99px;background:#E3E3E8;
+ position:relative;transition:.22s var(--ease);display:block;
+ }
+ .sw .tk::after{
+ content:"";position:absolute;top:2px;left:2px;width:19px;height:19px;
+ border-radius:50%;background:#fff;transition:.22s var(--ease);
+ box-shadow:0 1px 3px rgba(0,0,0,.18);
+ }
+ .sw input:checked + .tk{background:var(--fg)}
+ .sw input:checked + .tk::after{left:18px}
+
+ .switch.compact{display:flex;align-items:center;gap:8px;cursor:pointer}
+ .switch.compact input{display:none}
+ .switch.compact .track{
+ width:34px;height:20px;border-radius:99px;background:#E3E3E8;
+ position:relative;transition:.22s var(--ease);display:block;
+ }
+ .switch.compact .track::after{
+ content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;
+ border-radius:50%;background:#fff;transition:.22s var(--ease);
+ box-shadow:0 1px 3px rgba(0,0,0,.18);
+ }
+ .switch.compact input:checked + .track{background:var(--fg)}
+ .switch.compact input:checked + .track::after{left:16px}
+ .sw-lb{font-size:12px;color:var(--fg-2);font-weight:500}
+
+ .range{display:flex;align-items:center;gap:14px;flex:0 0 auto}
+ .range input[type=range]{width:170px;accent-color:var(--fg);cursor:pointer}
+ .range b{
+ font-size:13.5px;font-variant-numeric:tabular-nums;color:var(--fg);
+ min-width:44px;text-align:right;font-weight:600;
+ }
+
+ .settings-foot{
+ display:flex;align-items:center;gap:10px;flex:0 0 auto;padding-top:2px;
+ }
+ .msg{font-size:12.5px;margin-right:auto}
+ .msg.ok{color:var(--ok)} .msg.err{color:var(--bad)} .msg.dim{color:var(--fg-3)}
+ .badge-live{
+ font-size:11px;padding:4px 11px;border-radius:99px;font-weight:600;
+ background:#EAF7EE;color:#177A45;
+ }
+
+ .pill{
+ display:flex;align-items:center;gap:7px;font-size:12.5px;
+ color:var(--fg-2);padding:6px 12px;border-radius:99px;cursor:pointer;
+ transition:background .18s var(--ease);
+ }
+ .pill:hover{background:var(--surface-2)}
+ .dot{width:7px;height:7px;border-radius:50%;background:#C7C7CC;flex:0 0 auto;
+ transition:.25s var(--ease)}
+ .dot.on{background:var(--ok);box-shadow:0 0 0 3px rgba(29,185,84,.14)}
+ .dot.err{background:var(--bad)}
+ /* 运行页：手机画面 + 日志 并排 */
+ .split-row{display:flex;gap:16px;min-height:0;flex:1 1 auto}
+ .split-row > .card-block{margin:0}
+ .screen-block{flex:0 0 300px;display:flex;flex-direction:column;padding-bottom:16px}
+ .screen-body{
+ flex:1;background:var(--surface-2);border-radius:10px;
+ display:flex;align-items:center;justify-content:center;
+ min-height:180px;overflow:hidden;
+ }
+ .screen-body .ph{color:var(--fg-3);font-size:12px;text-align:center;line-height:1.9}
+ .screen-body .ph b{display:block;color:var(--fg-2);font-size:12.5px;
+ margin-bottom:3px;font-weight:500}
+ /* KPI 收紧一点 */
+ .kpi-row{padding-bottom:16px}
+ .kpi .n{font-size:25px}
+ @media (max-width:1000px){
+ .split-row{flex-direction:column}
+ .screen-block{flex:0 0 auto}
+ }
+ .screen-body img{
+ width:100%;height:100%;object-fit:contain;display:block;
+ background:#111;
+ }
+ .screen-body{background:var(--surface-2);position:relative}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+ <!-- 左侧导航 -->
+ <aside class="rail">
+ <div class="rail-brand">
+ <span class="logo">PK</span>
+ </div>
+ <nav class="rail-nav">
+ <a class="nav-item active" data-view="run">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+ <path d="M5 3v18M5 12h13M18 7v10" stroke-linecap="round"/>
+ </svg>
+ <span>运行</span>
+ </a>
+ <a class="nav-item" data-view="settings">
+ <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7">
+ <circle cx="12" cy="12" r="3"/>
+ <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9c.14.63.68 1.09 1.33 1.09H21a2 2 0 0 1 0 4h-.09c-.65 0-1.19.46-1.33 1.09z"/>
+ </svg>
+ <span>设置</span>
+ </a>
+ </nav>
+ <div class="rail-foot">
+ <span class="dot" id="dot"></span>
+ <span id="devText">未连接</span>
+ </div>
+ </aside>
+
+ <!-- 右侧内容 -->
+ <div class="content">
+
+ <!-- 视图：运行 -->
+ <section class="view active" id="viewRun">
+ <div class="page-hd">
+ <h1>运行</h1>
+ <div class="page-actions">
+ <button class="ghost" id="btnConnect">连接手机</button>
+ <button class="primary" id="btnStart">开始</button>
+ <button class="danger" id="btnStop" disabled>停止</button>
+ </div>
+ </div>
+
+ <div class="card-block">
+ <div class="blk-hd">
+ <span class="blk-title">实时统计</span>
+ <label class="switch compact">
+ <input type="checkbox" id="cbLive" checked>
+ <span class="track"></span>
+ <span class="sw-lb">真实点击</span>
+ </label>
+ </div>
+ <div class="kpi-row">
+ <div class="kpi"><div class="n" id="sTotal">0</div><div class="l">已答</div></div>
+ <div class="kpi"><div class="n" id="sHit">0</div><div class="l">命中</div></div>
+ <div class="kpi"><div class="n" id="sAi">0</div><div class="l">AI 兜底</div></div>
+ <div class="kpi"><div class="n" id="sGuess">0</div><div class="l">猜测</div></div>
+ <div class="kpi"><div class="n" id="sFake">0</div><div class="l">控分</div></div>
+ <div class="kpi"><div class="n" id="sRate">–</div><div class="l">命中率</div></div>
+ </div>
+ </div>
+
+ <div class="split-row grow">
+ <div class="card-block screen-block">
+ <div class="blk-hd">
+ <span class="blk-title">手机画面</span>
+ <span class="blk-sub" id="screenBadge">NO SIGNAL</span>
+ </div>
+ <div class="screen-body">
+ <img id="screenImg" alt="手机画面" hidden>
+ <div class="ph" id="ph"><b>尚未接入</b>连接手机后显示实时画面</div>
+ </div>
+ </div>
+
+ <div class="card-block grow">
+ <div class="blk-hd">
+ <span class="blk-title">答题日志</span>
+ <span class="blk-sub" id="logMeta">尚无记录</span>
+ </div>
+ <div class="logwrap" id="log"><div class="empty">等待开始…</div></div>
+ </div>
+ </div>
+ </section>
+
+ <!-- 视图：设置 -->
+ <section class="view" id="viewSettings">
+ <div class="page-hd">
+ <h1>设置</h1>
+ <div class="page-actions">
+ <span class="badge-live">热加载 · 改完即生效</span>
+ </div>
+ </div>
+
+ <div class="card-block">
+ <div class="blk-hd"><span class="blk-title">AI 兜底</span></div>
+ <div class="kv"><div class="k">启用<em>本地词典判不出时交给 Jev 判定</em></div>
+ <label class="sw"><input type="checkbox" id="fAiEnabled"><span class="tk"></span></label></div>
+ <div class="kv"><div class="k">记住答案<em>同一个词只问一次，之后本地直接命中</em></div>
+ <label class="sw"><input type="checkbox" id="fRemember"><span class="tk"></span></label></div>
+ <div class="kv"><div class="k">模式</div>
+ <select id="fMode" class="sel">
+ <option value="jev">jev — TypeSafe 官方</option>
+ <option value="chat">chat — 任意 OpenAI 兼容</option>
+ </select></div>
+ <div class="kv"><div class="k">接口地址</div>
+ <input type="text" id="fBaseUrl" class="inp"></div>
+ <div class="kv"><div class="k">模型</div>
+ <input type="text" id="fModel" class="inp"></div>
+ <div class="kv"><div class="k">超时<em>秒；实际取它和界面剩余时间里更小的</em></div>
+ <input type="number" id="fTimeout" class="inp num" step="0.1" min="0.3" max="10"></div>
+ </div>
+
+ <div class="card-block">
+ <div class="blk-hd"><span class="blk-title">控分</span></div>
+ <div class="kv"><div class="k">启用<em>让正确率贴近目标，不至于高得扎眼</em></div>
+ <label class="sw"><input type="checkbox" id="fScoreEnabled"><span class="tk"></span></label></div>
+ <div class="kv"><div class="k">目标正确率</div>
+ <div class="range">
+ <input type="range" id="fTargetRange" min="0" max="100" step="1">
+ <b id="fTargetVal">70%</b>
+ </div></div>
+ </div>
+
+ <div class="settings-foot">
+ <span class="msg" id="cfgMsg"></span>
+ <span class="spacer"></span>
+ <button class="primary" id="btnCfgSave">保存并生效</button>
+ </div>
+ </section>
+
+ </div>
+</div>
+
+<!-- ============ 引导：选连接方式 ============ -->
+<div class="veil" id="onb">
+ <div class="card onboard">
+ <div class="onb-hd">
+ <h2>先连接手机</h2>
+ <p>选一种方式。两种都行，无线省事但手机重启后可能要重配。</p>
+ </div>
+ <div class="choices">
+ <div class="choice" data-mode="usb">
+ <div class="tag good">最稳</div>
+ <div class="ico"></div>
+ <div class="tt">有线 ADB</div>
+ <div class="dd">USB 线连电脑，开启开发者选项 -> USB 调试。手机重启也不用重新配置。</div>
+ </div>
+ <div class="choice" data-mode="wifi">
+ <div class="tag">免插线</div>
+ <div class="ico"></div>
+ <div class="tt">无线 ADB</div>
+ <div class="dd">手机电脑同一 Wi-Fi，用「无线调试」的配对码配一次，之后不用插线。</div>
+ </div>
+ </div>
+
+ <!-- 有线面板 -->
+ <div class="panel-body" id="paneUsb" style="display:none">
+ <div class="steps">
+ <ol>
+ <li>手机上打开 <b>设置 -> 开发者选项 -> USB 调试</b></li>
+ <li>用数据线连电脑，手机弹出「允许调试？」时点 <b>允许</b></li>
+ <li>看到下面显示已连接就成功了</li>
+ </ol>
+ </div>
+ <div class="msg dim" id="usbMsg">等待设备…</div>
+ </div>
+
+ <!-- 无线面板 -->
+ <div class="panel-body" id="paneWifi" style="display:none">
+ <div class="steps">
+ <ol>
+ <li>手机 <b>设置 -> 开发者选项 -> 无线调试</b>，打开开关</li>
+ <li>点进去选 <b>「使用配对码配对设备」</b>，屏幕上会显示 <b>IP:端口</b> 和 <b>6 位配对码</b></li>
+ <li>把这两个填到下面，点「配对」，成功后再点「连接」</li>
+ </ol>
+ </div>
+ <div class="field">
+ <label>配对地址（IP:端口）</label>
+ <div class="row">
+ <input type="text" id="wAddr" placeholder="192.168.0.103:41234">
+ <button id="btnScan" style="flex:0 0 auto">自动扫描</button>
+ </div>
+ </div>
+ <div class="field">
+ <label>6 位配对码</label>
+ <input type="text" id="wCode" placeholder="123456" maxlength="6" inputmode="numeric">
+ </div>
+ <div class="msg dim" id="wifiMsg"></div>
+ </div>
+
+ <div class="onb-ft">
+ <span class="msg" id="onbMsg"></span>
+ <button class="ghost" id="btnSkip">稍后再说</button>
+ <button class="primary" id="btnOnbGo" disabled>继续</button>
+ </div>
+ </div>
+</div>
+
+
+<script>
+const $ = id => document.getElementById(id);
+const logEl = $('log');
+let running = false, lastLines = -1, cfgSummary = {}, rawText = '', mode = '';
+
+/* ---------------- 顶栏 / 统计 ---------------- */
+function setRunning(v){
+ running = v;
+ $('btnStart').disabled = v;
+ $('btnStop').disabled = !v;
+}
+function paintDevice(d){
+ const dot = $('dot'), t = $('devText');
+ if (d.connected){
+ dot.className = 'dot on';
+ t.textContent = (d.mode === 'wifi' ? '无线 ' : 'USB ') + d.serial;
+ } else {
+ dot.className = 'dot ' + (d.error ? 'err' : '');
+ t.textContent = d.error ? '未连接 · ' + d.error : '未连接 · 点击连接';
+ }
+ $('screenBadge').textContent = d.connected ? 'READY' : 'NO SIGNAL';
+}
+function applyStats(s){
+ const total = s.hit + s.ai + s.guess + s.fake;
+ $('sTotal').textContent = total;
+ $('sHit').textContent = s.hit;
+ $('sAi').textContent = s.ai;
+ $('sGuess').textContent = s.guess;
+ $('sFake').textContent = s.fake;
+ $('sRate').textContent = total ? Math.round((s.hit + s.ai) / total * 100) + '%' : '–';
+ setRunning(!!s.running);
+}
+function lineClass(l){
+ if (l.includes('[ai]') || l.includes(' AI ')) return 'ai';
+ if (l.includes('控分')) return 'fake';
+ if (l.includes('[?]') || l.includes('[!]')) return 'err';
+ if (l.includes('[+]')) return 'hit';
+ return '';
+}
+function renderLine(line){
+ const d = document.createElement('div');
+ d.className = 'ln ' + lineClass(line);
+ const m = line.match(/^\[(\d\d:\d\d:\d\d)\]\s*([\s\S]*)$/);
+ if (m){
+ const t = document.createElement('span'); t.className = 't'; t.textContent = m[1];
+ d.appendChild(t); d.appendChild(document.createTextNode(m[2]));
+ } else d.textContent = line;
+ return d;
+}
+function paintLog(lines){
+ logEl.innerHTML = '';
+ if (!lines.length){
+ logEl.innerHTML = '<div class="empty">等待开始…</div>';
+ return;
+ }
+ lines.forEach(l => logEl.appendChild(renderLine(l)));
+ logEl.scrollTop = logEl.scrollHeight;
+}
+
+async function refresh(){
+ try{
+ const r = await fetch('/api/status');
+ const d = await r.json();
+ applyStats(d.stats); paintDevice(d.device);
+ if (d.stats.lines !== lastLines || d.stats.lines === 0){
+ paintLog(d.tail); lastLines = d.stats.lines;
+ }
+ }catch(e){}
+}
+async function post(p, b){
+ const r = await fetch(p, {method:'POST', headers:{'Content-Type':'application/json'},
+ body: JSON.stringify(b || {})});
+ return r.json();
+}
+
+/* ---------------- 启停 ---------------- */
+$('btnStart').onclick = async () => {
+ const r = await post('/api/start', {live: $('cbLive').checked});
+ if (!r.ok){ showOnboard('start-failed'); setMsg('onbMsg', r.msg, 'err'); }
+ refresh();
+};
+$('btnStop').onclick = async () => { await post('/api/stop'); refresh(); };
+$('cbLive').onchange = () => {
+};
+$('devText').onclick = () => showOnboard();
+
+/* ---------------- 引导 ---------------- */
+function setMsg(id, text, cls){
+ const e = $(id); e.textContent = text || '';
+ e.className = 'msg ' + (cls || 'dim');
+}
+function showOnboard(){
+ $('onb').classList.add('show');
+ $('btnOnbGo').disabled = !mode;
+ if (!mode) selectMode('usb');
+ refreshConn();
+}
+function hideOnboard(){ $('onb').classList.remove('show'); }
+
+function selectMode(m){
+ mode = m;
+ document.querySelectorAll('.choice').forEach(c =>
+ c.classList.toggle('sel', c.dataset.mode === m));
+ $('paneUsb').style.display = m === 'usb' ? 'block' : 'none';
+ $('paneWifi').style.display = m === 'wifi' ? 'block' : 'none';
+ $('btnOnbGo').disabled = false;
+ $('btnOnbGo').textContent = m === 'usb' ? '已完成，进入' : '连接';
+ setMsg('onbMsg', '');
+}
+document.querySelectorAll('.choice').forEach(c =>
+ c.onclick = () => selectMode(c.dataset.mode));
+
+async function refreshConn(){
+ try{
+ const r = await fetch('/api/conn');
+ const d = await r.json();
+ paintDevice(d.status);
+ if (mode === 'usb'){
+ setMsg('usbMsg', d.status.connected
+ ? ' 已连接：' + d.status.serial
+ : (d.status.error || '等待设备…'),
+ d.status.connected ? 'ok' : 'dim');
+ }
+ if (mode === 'wifi'){
+ const addrs = [...(d.mdns.pairing || []), ...(d.mdns.connect || []), ...(d.mdns.other || [])];
+ if (addrs.length && !$('wAddr').value) $('wAddr').value = addrs[0];
+ if (d.status.connected && d.status.mode === 'wifi'){
+ setMsg('wifiMsg', ' 已连接：' + d.status.serial, 'ok');
+ }
+ }
+ }catch(e){}
+}
+
+$('btnScan').onclick = async () => {
+ setMsg('wifiMsg', '扫描中…', 'dim');
+ await refreshConn();
+ if (!$('wAddr').value) setMsg('wifiMsg', '没扫到地址，手动填手机上的 IP:端口', 'err');
+ else setMsg('wifiMsg', '已填入扫到的地址，确认与手机显示一致', 'ok');
+};
+
+$('btnOnbGo').onclick = async () => {
+ if (mode === 'usb'){
+ const r = await fetch('/api/conn');
+ const d = await r.json();
+ if (!d.status.connected){ setMsg('onbMsg', '还没检测到设备，插好线并允许调试', 'err'); return; }
+ await post('/api/onboarded', {});
+ hideOnboard(); return;
+ }
+ // 无线：先配对再连接
+ const addr = $('wAddr').value.trim(), code = $('wCode').value.trim();
+ if (!addr || !code){ setMsg('onbMsg', '配对地址和配对码都要填', 'err'); return; }
+ setMsg('onbMsg', '配对中…', 'dim');
+ const p = await post('/api/wifi/pair', {addr, code});
+ if (!p.ok){ setMsg('onbMsg', '配对失败：' + p.msg, 'err'); return; }
+ setMsg('onbMsg', '配对成功，连接中…', 'ok');
+ const c = await post('/api/wifi/connect', {addr});
+ if (c.ok){ setMsg('onbMsg', ' 已连接', 'ok'); setTimeout(hideOnboard, 600); }
+ else setMsg('onbMsg', '连接失败：' + c.msg + '（配对端口不等于连接端口，连接通常不带端口，用 IP:5555）', 'err');
+};
+$('btnSkip').onclick = hideOnboard;
+
+/* ---------------- 视图切换 ---------------- */
+function switchView(name){
+ document.querySelectorAll('.nav-item').forEach(n =>
+ n.classList.toggle('active', n.dataset.view === name));
+ document.querySelectorAll('.view').forEach(v =>
+ v.classList.toggle('active', v.id === 'view' + name[0].toUpperCase() + name.slice(1)));
+ if (name === 'settings') loadCfg();
+}
+document.querySelectorAll('.nav-item').forEach(n =>
+ n.onclick = () => switchView(n.dataset.view));
+
+/* 顶栏「连接手机」：任何时候都能重新打开配对引导 */
+$('btnConnect').onclick = () => showOnboard();
+/* ---------------- 配置 ---------------- */
+function fillForm(s){
+ $('fAiEnabled').checked = !!s.ai_enabled;
+ $('fRemember').checked = s.ai_remember !== false;
+ $('fMode').value = s.ai_mode || 'jev';
+ $('fBaseUrl').value = s.ai_base_url || '';
+ $('fModel').value = s.ai_model || '';
+ $('fTimeout').value = s.ai_timeout || 1.8;
+ $('fScoreEnabled').checked = !!s.score_enabled;
+ const t = Math.round((s.score_target || 0.7) * 100);
+ $('fTargetRange').value = t;
+ $('fTargetVal').textContent = t + '%';
+}
+async function loadCfg(){
+ const r = await fetch('/api/config');
+ const d = await r.json();
+ rawText = d.text;
+ const s = d.summary || {};
+ const m1 = rawText.match(/^\s*base_url\s*=\s*"([^"]*)"/m);
+ const m2 = rawText.match(/^\s*model\s*=\s*"([^"]*)"/m);
+ s.ai_base_url = m1 ? m1[1] : '';
+ if (m2) s.ai_model = m2[1];
+ fillForm(s);
+}
+$('fTargetRange').oninput = () => {
+ $('fTargetVal').textContent = $('fTargetRange').value + '%';
+};
+
+
+/* 表单 -> TOML：只改对应几行，其余（注释、顺序）原样保留 */
+function setToml(text, section, key, value){
+ const lines = text.split(/\r?\n/);
+ const val = typeof value === 'string' ? '"' + value + '"' : String(value);
+ let inSec = false;
+ for (let i = 0; i < lines.length; i++){
+ const sec = lines[i].match(/^\s*\[([^\]]+)\]/);
+ if (sec){ inSec = sec[1].trim() === section; continue; }
+ if (!inSec) continue;
+ const m = lines[i].match(new RegExp('^(\\s*)' + key + '\\s*=\\s*([^#]*?)(\\s*#.*)?$'));
+ if (m){
+ const pad = ' '.repeat(Math.max(1, 12 - key.length));
+ const cmt = m[3] ? ' ' + m[3].trim() : '';
+ lines[i] = m[1] + key + pad + '= ' + val + cmt;
+ return lines.join('\n');
+ }
+ }
+ return lines.join('\n');
+}
+function buildToml(){
+ let t = rawText;
+ t = setToml(t, 'ai', 'enabled', $('fAiEnabled').checked);
+ t = setToml(t, 'ai', 'remember', $('fRemember').checked);
+ t = setToml(t, 'ai', 'mode', $('fMode').value);
+ t = setToml(t, 'ai', 'base_url', $('fBaseUrl').value.trim());
+ t = setToml(t, 'ai', 'model', $('fModel').value.trim());
+ const to = parseFloat($('fTimeout').value);
+ t = setToml(t, 'ai', 'timeout', isNaN(to) ? 1.8 : to);
+ t = setToml(t, 'score', 'enabled', $('fScoreEnabled').checked);
+ const tg = parseFloat($('fTargetRange').value);
+ t = setToml(t, 'score', 'target_accuracy', ((isNaN(tg) ? 70 : tg) / 100).toFixed(2));
+ return t;
+}
+
+$('btnCfgSave').onclick = async () => {
+ const text = buildToml();
+ const chk = await post('/api/config/check', {text});
+ if (!chk.ok){ setMsg('cfgMsg', chk.msg, 'err'); return; }
+ const r = await post('/api/config', {text});
+ if (!r.ok){ setMsg('cfgMsg', '\u274c ' + r.msg, 'err'); return; }
+ rawText = text;
+ await loadCfg();
+ setMsg('cfgMsg', running
+ ? '\u2705 已保存 — 跑着的这一局下一题就生效'
+ : '\u2705 已保存', 'ok');
+};
+/* ---------------- 手机实时画面 ---------------- */
+let screenTimer = null, lastFrameUrl = '';
+function startScreenLoop(){
+ if (screenTimer) return;
+ const img = $('screenImg'), ph = $('ph');
+ const tick = () => {
+ if (!img) return;
+ const url = '/api/screen.jpg?t=' + Date.now();
+ const probe = new Image();
+ probe.onload = () => {
+ img.src = url;
+ img.hidden = false;
+ ph.style.display = 'none';
+ };
+ probe.onerror = () => {
+ img.hidden = true;
+ ph.style.display = '';
+ };
+ probe.src = url;
+ };
+ tick();
+ screenTimer = setInterval(tick, 900);
+}
+startScreenLoop();
+/* ---------------- 启动 ---------------- */
+(async () => {
+ await refresh();
+ await loadCfg();
+ let connected = false, onboarded = false;
+ try{
+ const d = await (await fetch('/api/conn')).json();
+ connected = d.status.connected;
+ onboarded = !!d.onboarded;
+ }catch(e){}
+
+ if (connected){
+ // 已经连着：直接进主界面，并记住「这台连过」，以后不再弹引导
+ hideOnboard();
+ if (!onboarded) post('/api/onboarded', {});
+ } else if (!onboarded){
+ // 从没连成功过才弹引导
+ showOnboard();
+ }
+ // 连过但当前掉线：不弹窗打扰，只在左下角状态显示未连接
+
+ setInterval(refresh, 1000);
+ setInterval(() => { if ($('onb').classList.contains('show')) refreshConn(); }, 2000);
+})();
+</script>
+</body>
+</html>

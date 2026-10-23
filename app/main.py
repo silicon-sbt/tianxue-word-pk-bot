@@ -1,0 +1,541 @@
+"""天学网单词PK助手 - 桌面应用（pywebview 套壳）
+
+架构：Python 后端（本地 HTTP + SSE） <- pywebview 原生窗口 <- 单页 HTML
+
+画面刷新策略（重要）：
+  `adb exec-out screencap -p` 单帧实测 600-800ms，这是 adb 截图协议本身的上限，
+  换写法救不了（实测 raw 输出更慢，sdcard 中转也慢）。
+  所以这里用「后台线程持续抓帧 + 前端取最新帧」：抓帧与显示解耦，
+  前端永远拿到最近一帧，不会因为等截图而卡住。
+
+启动：python -X utf8 app/main.py
+"""
+from __future__ import annotations
+
+import io
+import json
+import os
+import subprocess
+import sys
+import threading
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import webview
+
+ROOT = Path(__file__).resolve().parent.parent
+SRC = ROOT / "src"
+UI = Path(__file__).resolve().parent
+LOG = ROOT / "logs" / "live_out.txt"
+CONFIG = ROOT / "config.toml"
+WIRELESS_STATE = ROOT / "data" / "wireless.json"
+
+sys.path.insert(0, str(SRC))
+sys.path.insert(0, str(ROOT / "tools"))
+
+HOST, PORT = "127.0.0.1", 8791
+
+_proc: subprocess.Popen | None = None
+_proc_lock = threading.Lock()
+
+
+# ------------------------------------------------------------------ 基础
+
+def _adb() -> str:
+    try:
+        from adb_driver import ADB
+        return ADB
+    except Exception:  # noqa: BLE001
+        return "adb"
+
+
+def _run(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
+    p = subprocess.run([_adb()] + args, capture_output=True, timeout=timeout)
+    return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace").strip()
+
+
+def _devices() -> list[dict]:
+    """列出设备。
+
+    无线调试（mDNS）的序列号含空格，形如
+      adb-10AE7X036B0018B-kFzd2o (2)._adb-tls-connect._tcp device product:...
+    用 split() 会把 " (2)" 切走。这里按 " device" 切，前面整体是序列号。
+    """
+    rc, out = _run(["devices", "-l"], timeout=15)
+    rows = []
+    for line in out.splitlines()[1:]:
+        line = line.rstrip()
+        if not line.strip():
+            continue
+        if "\t" in line:
+            serial, rest = line.split("\t", 1)
+        else:
+            idx = line.find(" device")
+            if idx < 0:
+                continue
+            serial, rest = line[:idx], line[idx + 1:]
+        serial = serial.strip()
+        if not serial:
+            continue
+        state = rest.strip().split()[0] if rest.strip() else "?"
+        rows.append({
+            "serial": serial,
+            "state": state,
+            "wireless": ":" in serial or "_adb-tls" in serial,
+        })
+    return rows
+
+
+def _device_status() -> dict:
+    try:
+        rows = _devices()
+    except Exception as e:  # noqa: BLE001
+        return {"connected": False, "serial": "", "mode": "", "error": str(e)[:80]}
+
+    ok = [d for d in rows if d["state"] == "device"]
+    if ok:
+        wired = [d for d in ok if not d["wireless"] and ":" not in d["serial"]]
+        pick = (wired or ok)[0]
+        return {
+            "connected": True,
+            "serial": pick["serial"],
+            "mode": "wifi" if pick["wireless"] else "usb",
+            "error": "",
+        }
+    if rows:
+        return {"connected": False, "serial": "", "mode": "",
+                "error": "设备未授权，请在手机上点允许调试"}
+    return {"connected": False, "serial": "", "mode": "", "error": ""}
+
+
+def _load_wireless() -> dict:
+    try:
+        return json.loads(WIRELESS_STATE.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _save_wireless(d: dict) -> None:
+    WIRELESS_STATE.parent.mkdir(parents=True, exist_ok=True)
+    WIRELESS_STATE.write_text(
+        json.dumps(d, ensure_ascii=False, indent=1), encoding="utf-8")
+
+
+def _mdns() -> dict:
+    try:
+        rc, out = _run(["mdns", "services"], timeout=12)
+    except Exception:  # noqa: BLE001
+        return {"pairing": [], "connect": [], "other": []}
+    import re
+    res = {"pairing": [], "connect": [], "other": []}
+    for line in out.splitlines():
+        m = re.search(r"(\d+\.\d+\.\d+\.\d+):(\d+)", line)
+        if not m:
+            continue
+        addr = f"{m.group(1)}:{m.group(2)}"
+        low = line.lower()
+        if "pairing" in low:
+            res["pairing"].append(addr)
+        elif "connect" in low:
+            res["connect"].append(addr)
+        else:
+            res["other"].append(addr)
+    return {k: sorted(set(v)) for k, v in res.items()}
+
+
+# ------------------------------------------------------------------ 配置
+
+def read_config() -> str:
+    try:
+        return CONFIG.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+
+
+def check_config(text: str) -> dict:
+    import tomllib
+    try:
+        d = tomllib.loads(text)
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": f"TOML 语法错误：{e}"}
+    ai = d.get("ai") if isinstance(d.get("ai"), dict) else {}
+    mode = str(ai.get("mode", "chat")).lower()
+    if ai.get("enabled") and mode not in ("chat", "jev"):
+        return {"ok": False, "msg": f'ai.mode 只能是 "chat" 或 "jev"，当前是 {mode!r}'}
+    t = ai.get("timeout", 1.8)
+    if ai.get("enabled") and not isinstance(t, (int, float)):
+        return {"ok": False, "msg": "ai.timeout 必须是数字"}
+    return {"ok": True, "msg": "语法正确"}
+
+
+def write_config(text: str) -> dict:
+    r = check_config(text)
+    if not r["ok"]:
+        return r
+    try:
+        CONFIG.write_text(text, encoding="utf-8")
+    except OSError as e:
+        return {"ok": False, "msg": str(e)}
+    return {"ok": True, "msg": "已保存，正在运行的 bot 会即时生效"}
+
+
+def config_summary() -> dict:
+    import tomllib
+    try:
+        d = tomllib.loads(read_config())
+    except Exception:  # noqa: BLE001
+        return {}
+    ai = d.get("ai") if isinstance(d.get("ai"), dict) else {}
+    sc = d.get("score") if isinstance(d.get("score"), dict) else {}
+    bt = d.get("bot") if isinstance(d.get("bot"), dict) else {}
+    try:
+        from config import load as load_config
+        c = load_config()
+        key_ok = bool(c.ai.api_key)
+        key_len = len(c.ai.api_key)
+    except Exception:  # noqa: BLE001
+        key_ok, key_len = False, 0
+    return {
+        "ai_enabled": bool(ai.get("enabled")),
+        "ai_mode": ai.get("mode", "chat"),
+        "ai_model": ai.get("model", ""),
+        "ai_timeout": ai.get("timeout", 1.8),
+        "ai_remember": ai.get("remember", True),
+        "key_present": key_ok,
+        "key_len": key_len,
+        "score_enabled": bool(sc.get("enabled")),
+        "score_target": sc.get("target_accuracy", 0.7),
+        "question_seconds": bt.get("question_seconds", 6.0),
+    }
+
+
+# ------------------------------------------------------------------ 统计
+
+def _stats_from_log() -> dict:
+    s = {"hit": 0, "ai": 0, "guess": 0, "fake": 0, "miss": 0, "lines": 0,
+         "running": _proc is not None and _proc.poll() is None}
+    if not LOG.exists():
+        return s
+    try:
+        text = LOG.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return s
+    s["lines"] = len(text.splitlines())
+    for line in text.splitlines():
+        if "[+]" in line:
+            if " AI " in line:
+                s["ai"] += 1
+            elif " 控分 " in line:
+                s["fake"] += 1
+            elif " 猜 " in line:
+                s["guess"] += 1
+            else:
+                s["hit"] += 1
+        elif "[?]" in line or "[!]" in line:
+            s["miss"] += 1
+    return s
+
+
+def _tail(n: int = 200) -> list[str]:
+    if not LOG.exists():
+        return []
+    try:
+        lines = LOG.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return []
+    return lines[-n:]
+
+
+# ------------------------------------------------------------------ 手机画面
+
+_screen = {"jpeg": b"", "ts": 0.0, "err": "", "ms": 0.0}
+_screen_lock = threading.Lock()
+_screen_stop = threading.Event()
+
+
+def _pick_serial() -> str:
+    st = _device_status()
+    return st.get("serial", "") if st.get("connected") else ""
+
+
+def _grab_loop() -> None:
+    """持续抓帧，维护「最新一帧」缓存。
+
+    单帧 600-800ms 是 adb 截图协议的上限，这里不跟它较劲：
+    抓帧线程一直跑，前端随时取最新帧，画面连续但频率约 1.3fps。
+    """
+    from PIL import Image
+
+    while not _screen_stop.is_set():
+        t0 = time.perf_counter()
+        try:
+            serial = _pick_serial()
+            if not serial:
+                with _screen_lock:
+                    _screen["err"] = "未连接"
+                _screen_stop.wait(0.5)
+                continue
+
+            p = subprocess.run(
+                [_adb(), "-s", serial, "exec-out", "screencap", "-p"],
+                capture_output=True, timeout=8)
+            if p.returncode == 0 and p.stdout:
+                img = Image.open(io.BytesIO(p.stdout)).convert("RGB")
+                w, h = img.size
+                tw = 420
+                img = img.resize((tw, int(h * tw / w)), Image.LANCZOS)
+                buf = io.BytesIO()
+                img.save(buf, "JPEG", quality=62)
+                ms = (time.perf_counter() - t0) * 1000
+                with _screen_lock:
+                    _screen["jpeg"] = buf.getvalue()
+                    _screen["ts"] = time.time()
+                    _screen["err"] = ""
+                    _screen["ms"] = ms
+            else:
+                with _screen_lock:
+                    _screen["err"] = "截图失败"
+        except Exception as e:  # noqa: BLE001
+            with _screen_lock:
+                _screen["err"] = type(e).__name__
+        # 抓帧本身要 0.6-0.8s，这里只留很短的空隙
+        _screen_stop.wait(0.15)
+
+
+def screen_jpeg() -> bytes:
+    with _screen_lock:
+        return _screen["jpeg"]
+
+
+def screen_meta() -> dict:
+    with _screen_lock:
+        age = (round(time.time() - _screen["ts"], 1)
+               if _screen["ts"] else None)
+        return {"ts": _screen["ts"], "err": _screen["err"],
+                "size": len(_screen["jpeg"]), "age": age,
+                "grab_ms": round(_screen["ms"])}
+
+
+# ------------------------------------------------------------------ 启停
+
+def start_bot(live: bool = True) -> dict:
+    global _proc
+    with _proc_lock:
+        if _proc is not None and _proc.poll() is None:
+            return {"ok": False, "msg": "已经在跑了"}
+        st = _device_status()
+        if not st["connected"]:
+            return {"ok": False,
+                    "msg": "手机没连上，" + (st["error"] or "请先连接设备")}
+        LOG.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            LOG.write_text("", encoding="utf-8")
+        except OSError:
+            pass
+        args = [sys.executable, "-X", "utf8", str(SRC / "run_watch.py"),
+                "--max", "130", "--minutes", "30", "--wait", "600"]
+        if live:
+            args.append("--live")
+        flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+        _proc = subprocess.Popen(args, cwd=str(ROOT), stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, creationflags=flags)
+        return {"ok": True, "msg": "已启动" + ("" if live else "（只读）")}
+
+
+def stop_bot() -> dict:
+    global _proc
+    with _proc_lock:
+        if _proc is None or _proc.poll() is not None:
+            _proc = None
+            return {"ok": False, "msg": "没在跑"}
+        try:
+            if os.name == "nt":
+                subprocess.run(["taskkill", "/PID", str(_proc.pid), "/T", "/F"],
+                               capture_output=True, timeout=10)
+            else:
+                _proc.terminate()
+        except Exception:  # noqa: BLE001
+            pass
+        _proc = None
+        return {"ok": True, "msg": "已停止"}
+
+
+# ------------------------------------------------------------------ 连接
+
+def conn_scan() -> dict:
+    st = _device_status()
+    saved = _load_wireless()
+    return {"status": st, "mdns": _mdns(), "saved": saved,
+            "onboarded": bool(saved.get("onboarded")),
+            "last_ip": saved.get("ip", "")}
+
+
+def mark_onboarded() -> dict:
+    st = _load_wireless()
+    st["onboarded"] = True
+    _save_wireless(st)
+    return {"ok": True, "msg": "已记住"}
+
+
+def conn_wifi_pair(addr: str, code: str) -> dict:
+    addr = (addr or "").strip()
+    code = (code or "").strip()
+    if ":" not in addr:
+        return {"ok": False, "msg": "配对地址要带端口，例如 192.168.0.103:41234"}
+    if not code.isdigit():
+        return {"ok": False, "msg": "配对码是 6 位数字"}
+    rc, out = _run(["pair", addr, code], timeout=40)
+    ok = "Successfully paired" in out or rc == 0
+    if ok:
+        st = _load_wireless()
+        st["ip"] = addr.split(":")[0]
+        st["pair_addr"] = addr
+        _save_wireless(st)
+        return {"ok": True, "msg": "配对成功，接着点连接"}
+    return {"ok": False, "msg": out[:200] or "配对失败"}
+
+
+def conn_wifi_connect(addr: str = "") -> dict:
+    addr = (addr or "").strip()
+    st = _load_wireless()
+    if not addr:
+        ip = st.get("ip")
+        if not ip:
+            return {"ok": False, "msg": "还没有地址，先配对"}
+        addr = f"{ip}:{st.get('port', 5555)}"
+    elif ":" not in addr:
+        addr = addr + ":5555"
+
+    rc, out = _run(["connect", addr], timeout=30)
+    ok = "connected to" in out.lower()
+    if not ok:
+        return {"ok": False, "msg": out[:200] or "连接失败"}
+
+    st["ip"] = addr.split(":")[0]
+    st["port"] = addr.split(":")[1]
+    _save_wireless(st)
+    for _ in range(8):
+        time.sleep(0.4)
+        if _device_status()["connected"]:
+            return {"ok": True, "msg": f"已连接 {addr}"}
+    return {"ok": False, "msg": "adb 说连上了但设备没就绪，检查手机是否授权"}
+
+
+def conn_wifi_disconnect() -> dict:
+    d = _device_status()
+    if d["mode"] != "wifi":
+        return {"ok": False, "msg": "当前不是无线连接"}
+    _run(["disconnect"], timeout=15)
+    return {"ok": True, "msg": "已断开无线"}
+
+
+# ------------------------------------------------------------------ HTTP
+
+class Handler(BaseHTTPRequestHandler):
+    def log_message(self, *a):
+        pass
+
+    def _send(self, code: int, body: bytes, ctype: str = "text/plain; charset=utf-8"):
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _json(self, obj, code: int = 200):
+        self._send(code, json.dumps(obj, ensure_ascii=False).encode(),
+                   "application/json; charset=utf-8")
+
+    def do_GET(self):
+        p = self.path.split("?")[0]
+        if p in ("/", "/index.html"):
+            return self._send(200, (UI / "index.html").read_bytes(),
+                              "text/html; charset=utf-8")
+        if p == "/api/status":
+            return self._json({"stats": _stats_from_log(),
+                               "device": _device_status(), "tail": _tail(120)})
+        if p == "/api/config":
+            return self._json({"text": read_config(), "summary": config_summary()})
+        if p == "/api/conn":
+            return self._json(conn_scan())
+        if p == "/api/screen.meta":
+            return self._json(screen_meta())
+        if p == "/api/screen.jpg":
+            data = screen_jpeg()
+            if not data:
+                return self._send(404, b"no frame")
+            return self._send(200, data, "image/jpeg")
+        if p == "/api/stream":
+            return self._stream()
+        self._send(404, b"not found")
+
+    def _stream(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        last = 0
+        try:
+            while True:
+                st = _stats_from_log()
+                payload = {"stats": st, "device": _device_status()}
+                if st["lines"] < last:
+                    payload["reset"] = True
+                last = st["lines"]
+                self.wfile.write(
+                    f"data: {json.dumps(payload, ensure_ascii=False)}\n\n".encode())
+                for ln in _tail(400)[-40:]:
+                    self.wfile.write(
+                        f"event: log\ndata: {json.dumps(ln, ensure_ascii=False)}\n\n".encode())
+                self.wfile.flush()
+                time.sleep(1.0)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
+
+    def do_POST(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        raw = self.rfile.read(n) if n else b""
+        p = self.path.split("?")[0]
+        try:
+            b = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception:  # noqa: BLE001
+            b = {}
+
+        routes = {
+            "/api/start": lambda: start_bot(bool(b.get("live", True))),
+            "/api/stop": stop_bot,
+            "/api/config": lambda: write_config(b.get("text", "")),
+            "/api/config/check": lambda: check_config(b.get("text", "")),
+            "/api/wifi/pair": lambda: conn_wifi_pair(b.get("addr", ""), b.get("code", "")),
+            "/api/wifi/connect": lambda: conn_wifi_connect(b.get("addr", "")),
+            "/api/wifi/disconnect": conn_wifi_disconnect,
+            "/api/onboarded": mark_onboarded,
+        }
+        fn = routes.get(p)
+        if fn is None:
+            return self._send(404, b"not found")
+        self._json(fn())
+
+
+def serve():
+    srv = ThreadingHTTPServer((HOST, PORT), Handler)
+    srv.daemon_threads = True
+    srv.serve_forever()
+
+
+def main() -> None:
+    threading.Thread(target=serve, daemon=True).start()
+    threading.Thread(target=_grab_loop, daemon=True).start()
+    time.sleep(0.6)
+    webview.create_window(
+        "天学网单词PK助手", f"http://{HOST}:{PORT}/",
+        width=1280, height=820, min_size=(1000, 680),
+        background_color="#FBFBFD", menu=[],
+    )
+    webview.start(debug=False)
+
+
+if __name__ == "__main__":
+    main()

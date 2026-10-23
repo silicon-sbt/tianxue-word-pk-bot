@@ -40,3 +40,19 @@ _tmp/
 
 # �޹ص� Remotion ��Ŀ�������ڱ��ֿ⣩
 video/
+
+# 桌面 UI 调试截图（开发过程产物，不入库）
+captures/ui_*.png
+captures/v_*.png
+captures/shot_*.png
+captures/app_*.png
+captures/check_*.png
+captures/final_*.png
+captures/run1.jpg
+captures/phone_live.jpg
+
+# 无线连接的运行时状态（含设备序列号）
+data/wireless.json
+
+# 日志目录整体忽略
+logs/
