@@ -380,62 +380,20 @@ tools/
 
 ## 打包
 
-一条命令出全部产物：
+想自己出安装包的话：
 
 ```bash
 python -X utf8 tools/build.py
 ```
 
-产物：
+需要：
 
-| 路径 | 内容 |
-|---|---|
-| `dist/TianxuePK/` | 可直接运行的目录（68–98 MB） |
-| `E:\pk_release\TianxuePK-Portable-v1.0.0.zip` | 便携版 |
-| `E:\pk_release\TianxuePK-Setup-v1.0.0.exe` | 安装包（单独编译） |
+- Python 3.11+
+- [Inno Setup 6](https://jrsoftware.org/isdl.php)（只有编译安装包时需要）
+- 中文界面需要 `ChineseSimplified.isl`，放到 Inno Setup 的 `Languages` 目录
+  （[下载](https://github.com/jrsoftware/issrc/tree/main/Files/Languages)）
 
-安装包要另外编译：
-
-```bash
-"C:\Users\A\AppData\Local\Programs\Inno Setup 6\ISCC.exe" build\installer.iss
-```
-
-需要先装 [Inno Setup](https://jrsoftware.org/isdl.php)，并把 `ChineseSimplified.isl` 放进去
-（Inno 默认不带中文，去 [issrc](https://github.com/jrsoftware/issrc/tree/main/Files/Languages) 下载）。
-
-### 打包时踩的坑
-
-**1. 输出目录必须在纯 ASCII 路径下**
-
-实测同一份安装包：
-
-```
-E:\code\单词pk\release\   下运行 -> 失败（退出码 1，连 /LOG 都不生成）
-换到纯英文目录运行                 -> 成功，169 文件
-```
-
-Inno 在初始化阶段就挂了，极难排查。所以 `build.py` 把产物固定输出到 `E:\pk_release`。
-
-**2. 不能用 pywebview 打包**
-
-它的 Windows 后端依赖 pythonnet，PyInstaller 打包后 CLR 找不到 .NETStandard 运行时：
-
-```
-RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize
-```
-
-重定位 `Python.Runtime.dll` 无效（是 CLR 初始化问题，不是路径问题）。
-改用 Edge `--app` 套壳：零 .NET 依赖，窗口无地址栏。
-
-**3. Edge 版本太旧时 `--app` 窗口不出来**
-
-Edge 131 的同步服务拒绝旧版本，进程起来了但不创建窗口。加 `--disable-features=msEdgeSync` 绕开。
-
-**4. 打包后画面模块静默失效**
-
-`launcher.py` 的 `sys.path` 漏了 `app/` 目录，`from screen_stream import ScreenStream` 失败，
-画面降级成 `off` 但程序照常运行。因为打包后没有控制台，错误只能写进 `logs/screen_error.log`
-才定位得到——所以现在画面模块的加载错误一律落盘。
+产物在 `dist/` 与 `release/`。打包配置见 `build/app.spec`（PyInstaller）与 `build/installer.iss`（Inno Setup）。
 
 ---
 
@@ -506,115 +464,6 @@ python -X utf8 tools/smoke.py
 - `test_screens.py` 锁住「非答题页不能被当成题目」——被这个坑坑过一次，见踩坑记录 8。
 - `test_ai_http.py` 会真的起一个 HTTP 服务，覆盖正常返回、超时、500、返回垃圾、连不上——
  全部必须优雅降级成本地猜测，不能影响答题。
-
----
-
-## 踩过的坑
-
-这些都是实测踩到并修掉的，改动相关代码前建议先看一眼。
-
-<details>
-<summary><b>1. <code>adb shell cat</code> 返回 UTF-16，管道会二次破坏</b></summary>
-
-直接 `adb shell cat` + 重定向拿到的是 UTF-16（每个 ASCII 字符后跟一个 NUL），所有 `text="..."` 都提取不到。
-
-**必须用 `adb exec-out` 读原始字节**再自己解码。见 `decode_dump()`。
-
-</details>
-
-<details>
-<summary><b>2. <code>uiautomator dump</code> 会偶发失败</b></summary>
-
-实测 6 次里失败 4 次，且 adb 返回**非零退出码**。必须显式容忍并重试，否则整个循环被异常打断。
-
-</details>
-
-<details>
-<summary><b>3. 切题瞬间会读到「混合画面」</b></summary>
-
-表现为选项变成 7 个且末项重复（新旧两题的选项混在一起）。
-
-**曾用「连 dump 两次比对」检测 —— 结果耗时从 3s 飙到 11-13s，直接打爆 6 秒限时。** 现改为零成本结构判断（`_looks_transitional`）。
-
-</details>
-
-<details>
-<summary><b>4. 单字子串不是匹配</b></summary>
-
-`像`（resemble）是 `图像` 的子串，会被误判成答案。**子串匹配要求两边都 >=2 字**。
-
-</details>
-
-<details>
-<summary><b>5. 词库里的垃圾义项</b></summary>
-
-`vi. & vt.` 这类纯词性串被 `/` 切开后会留下 `&`，与选项解析串味，造成 `tend -> 举起` 误判。构建时已过滤。
-
-另外 `（建筑物，城镇等的）地点` 会被括号内的逗号切碎，需要**括号感知切分**。
-
-</details>
-
-<details>
-<summary><b>6. 别去调全局相似度公式</b></summary>
-
-试过加「覆盖率惩罚」修 `像/图像` 的问题，结果**直接弄坏 3 道原本正确的题**。
-
-正确做法是在**决策层**加针对性规则，不要动全局公式。
-
-</details>
-
-<details>
-<summary><b>7. 启动脚本的编码与换行符（改这两个文件前必读）</b></summary>
-
-`启动.vbs` 和 `.bat` 对编码非常挑剔，一开始两个都写错了：
-
-**`.bat` 必须是 CRLF 换行。** 用 LF-only 存会看到命令被逐字拆散：
-
-```
-'HIDDEN' is not recognized as an internal or external command
-'e_if_visible' is not recognized as an internal or external command
-```
-
-因为 cmd.exe 按 CRLF 切分，LF-only 会让 `(` `)` 块和 `:label` 全部错位。
-
-**`.vbs` 必须是 UTF-16LE + BOM。** wscript 按系统 ANSI 码页读 `.vbs`，UTF-8 中文会乱码成空字符串。
-
-**`.bat` 里一律不写非 ASCII。** cmd.exe 按系统 ANSI 码页读 `.bat`，中文在别的语言环境下会打乱命令解析。所有面向用户的中文提示都放在 `.vbs`（UTF-16 可靠）。
-
-改完用这两条自检：
-
-```powershell
-# .bat 应为纯 ASCII + 全 CRLF
-$b=[IO.File]::ReadAllBytes("启动.bat"); ($b|?{$_ -gt 127}).Count # 期望 0
-# .vbs 前两字节应为 FF FE
-$b=[IO.File]::ReadAllBytes("启动.vbs"); '{0:X2} {1:X2}' -f $b[0],$b[1]
-```
-
-</details>
-
-<details>
-<summary><b>8. 结算页会被误判成题目（实机跑出来的）</b></summary>
-
-一局打完后回到结算页，解析器把玩家的名字当成了题干、把 `Score` 当成了选项：
-
-```
-[ai] '宋博涛' -> 'Score' 置信 0.18 用时 0.95s
-[+] None [zh2en] '宋博涛' -> 'Score' @(437,1086) AI
-```
-
-后果是**白调一次 AI**（花钱 + 0.95s），还**在结算页上乱点**——可能点到「再来一局」。
-
-原因：`parse_screen` 原来只要求「屏幕上半部有个文本节点 + 下半部有几个文本」，
-结算页恰好满足（人名在上、Score 在下）。
-
-修法是加**准入校验**，两个判据都来自实机样本：
-
-- **必须有倒计时**（`4s` / `5s`）——真实答题页一定有，结算页没有
-- **选项数在 2–8 之间**——真实是 6 个，房间页的花名册有几十个
-
-宁可判成 `None` 多等一轮，也不能在非答题页上点。见 `test_screens.py`。
-
-</details>
 
 ---
 
