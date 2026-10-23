@@ -27,18 +27,18 @@ desktop.ini
 .idea/
 *.swp
 
-# ����ѧ�� App ��ȡ�Ĵʵ����ݣ����������ݣ��� 10.4MB��
-# ��Ҫ�ؽ��ʿ�ʱ�� README ������ȡ
+# ����ѧ�� App ��ȡ�Ĵʵ����ݣ����������ݣ��� 10.4MB��
+# ��Ҫ�ؽ��ʿ�ʱ�� README ������ȡ
 data/ed.db
 
-# DSH ɳ��Ȩ����ϲ������Ŀ�޹أ�
+# DSH ɳ��Ȩ����ϲ������Ŀ�޹أ�
 .acl-report/
 
 # 视频工程与出片缓存
 .tmp-npm-cache/
 _tmp/
 
-# �޹ص� Remotion ��Ŀ�������ڱ��ֿ⣩
+# �޹ص� Remotion ��Ŀ�������ڱ��ֿ⣩
 video/
 
 # 桌面 UI 调试截图（开发过程产物，不入库）
@@ -56,3 +56,14 @@ data/wireless.json
 
 # 日志目录整体忽略
 logs/
+
+# 打包产物与中间文件（不入库，走 Releases）
+dist/
+build/work/
+!build/app.spec
+!build/installer.iss
+installers/
+release/
+debug.log
+captures/cdp_proof.png
+captures/exe_*.png

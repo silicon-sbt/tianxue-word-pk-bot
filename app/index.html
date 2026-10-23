@@ -455,7 +455,7 @@
   }
   /* hidden 必须能压过 display:block，否则空帧就是一个黑块 */
   .screen-body img[hidden]{display:none}
-  .screen-body img:not([src]),.screen-body img[src='']{display:none}
+  .screen-body img:not([src]){display:none}
  .screen-body{background:var(--surface-2);position:relative}
 </style>
 </head>
@@ -909,50 +909,44 @@ $('btnCfgSave').onclick = async () => {
  : '\u2705 已保存', 'ok');
 };
 /* ---------------- 手机实时画面（MJPEG 长连接）----------------
-   空闲时不能直接开 MJPEG：端点即使没帧也会返回 200，
-   浏览器 onload 一触发 img 就显示，结果是块黑屏把占位文字挤走。
-   所以先探 meta，确认真有帧再连。 */
-let screenOn = false, screenRetry = null;
+   服务端在首帧到手前会返回 503，<img> 的 onerror 自然触发，
+   所以前端不需要先探 /api/screen.meta，只要有帧就直接显示。 */
+let screenOn = false, screenTimer = null;
 
-async function probeFrame(){
-  try{
-    const r = await fetch('/api/screen.meta');
-    const m = await r.json();
-    return !!(m && m.size > 0 && !m.err);
-  }catch(e){ return false; }
+function setShown(on){
+  const img = $('screenImg'), ph = $('ph');
+  if (img){
+    img.hidden = !on;
+    if (!on) img.removeAttribute('src');
+  }
+  if (ph) ph.style.display = on ? 'none' : '';
 }
 
-async function startScreen(){
+function scheduleRetry(ms){
+  // 每次都重新排期：原来用 if(!screenRetry) 守卫，
+  // 定时器 id 从不复位，导致第二次断流后永远不再重连。
+  clearTimeout(screenTimer);
+  screenTimer = setTimeout(startScreen, ms);
+}
+
+function startScreen(){
   if (screenOn) return;
-  const img = $('screenImg'), ph = $('ph');
+  const img = $('screenImg');
   if (!img) return;
 
-  if (!await probeFrame()){
-    showPlaceholder();
-    if (!screenRetry) screenRetry = setTimeout(startScreen, 1500);
-    return;
-  }
-
   screenOn = true;
-  img.onload = () => {
-    img.hidden = false;
-    if (ph) ph.style.display = 'none';
-  };
+  img.onload = () => setShown(true);
   img.onerror = () => {
     screenOn = false;
-    showPlaceholder();
-    if (!screenRetry) screenRetry = setTimeout(startScreen, 2000);
+    setShown(false);
+    scheduleRetry(1500);
   };
   img.src = '/api/screen.mjpeg?t=' + Date.now();
 }
 
-function showPlaceholder(){
-  const img = $('screenImg'), ph = $('ph');
-  if (img){ img.hidden = true; img.removeAttribute('src'); }
-  if (ph) ph.style.display = '';
-}
-
 startScreen();
+
+
 /* ---------------- 启动 ---------------- */
 (async () => {
  await refresh();

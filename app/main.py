@@ -2,17 +2,15 @@
 
 架构：Python 后端（本地 HTTP + SSE） <- pywebview 原生窗口 <- 单页 HTML
 
-画面刷新策略（重要）：
-  `adb exec-out screencap -p` 单帧实测 600-800ms，这是 adb 截图协议本身的上限，
-  换写法救不了（实测 raw 输出更慢，sdcard 中转也慢）。
-  所以这里用「后台线程持续抓帧 + 前端取最新帧」：抓帧与显示解耦，
-  前端永远拿到最近一帧，不会因为等截图而卡住。
+画面链路（见 app/screen_stream.py）：
+  adb screencap 单帧 600-800ms，做不了连续画面。
+  改用 screenrecord 的 H.264 流 -> PyAV 解码 -> JPEG，
+  经 MJPEG 长连接推给前端，上限 20fps。
 
 启动：python -X utf8 app/main.py
 """
 from __future__ import annotations
 
-import io
 import json
 import os
 import subprocess
@@ -22,11 +20,25 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
-import webview
 
-ROOT = Path(__file__).resolve().parent.parent
+# ---- 路径解析 ----
+# 冻结态（PyInstaller）下不能用 __file__ 推目录：
+#   可写数据（config/data/logs）放 exe 旁边，只读资源（index.html）在 _MEIPASS。
+# launcher.py 会通过环境变量把两者都告诉我们。
+_env_root = os.environ.get("PK_APP_ROOT")
+_env_bundle = os.environ.get("PK_BUNDLE_ROOT")
+
+if _env_root:
+    ROOT = Path(_env_root)
+else:
+    ROOT = Path(__file__).resolve().parent.parent
+
+if _env_bundle:
+    UI = Path(_env_bundle)
+else:
+    UI = Path(__file__).resolve().parent
+
 SRC = ROOT / "src"
-UI = Path(__file__).resolve().parent
 LOG = ROOT / "logs" / "live_out.txt"
 CONFIG = ROOT / "config.toml"
 WIRELESS_STATE = ROOT / "data" / "wireless.json"
@@ -55,13 +67,24 @@ def _run(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
     return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace").strip()
 
 
+_devices_cache: dict = {"at": -1e9, "rows": []}
+DEVICES_TTL = 2.5   # 秒
+
 def _devices() -> list[dict]:
-    """列出设备。
+    """列出设备（带 2.5s 缓存）。
+
+    这个函数被 /api/status（1s）和 SSE（1s）各调一次，每次起一个
+    `adb devices -l` 子进程约 70ms —— 每秒白烧 140ms 一个核。
+    设备状态 2.5 秒内基本不会变，缓存掉。
 
     无线调试（mDNS）的序列号含空格，形如
       adb-10AE7X036B0018B-kFzd2o (2)._adb-tls-connect._tcp device product:...
     用 split() 会把 " (2)" 切走。这里按 " device" 切，前面整体是序列号。
     """
+    now = time.monotonic()
+    if now - _devices_cache["at"] < DEVICES_TTL:
+        return _devices_cache["rows"]
+
     rc, out = _run(["devices", "-l"], timeout=15)
     rows = []
     for line in out.splitlines()[1:]:
@@ -84,7 +107,10 @@ def _devices() -> list[dict]:
             "state": state,
             "wireless": ":" in serial or "_adb-tls" in serial,
         })
+    _devices_cache["at"] = now
+    _devices_cache["rows"] = rows
     return rows
+
 
 
 def _device_status() -> dict:
@@ -212,17 +238,37 @@ def config_summary() -> dict:
 
 # ------------------------------------------------------------------ 统计
 
+# /api/status 与 SSE 每秒各要一次统计，每次重解析整个日志是白费。
+# 日志只在 bot 写的时候变，按 (mtime, size) 缓存结果即可。
+_stats_cache: dict = {"key": None, "val": None}
+
+
 def _stats_from_log() -> dict:
-    s = {"hit": 0, "ai": 0, "guess": 0, "fake": 0, "miss": 0, "lines": 0,
-         "running": _proc is not None and _proc.poll() is None}
+    running = _proc is not None and _proc.poll() is None
     if not LOG.exists():
-        return s
+        return {"hit": 0, "ai": 0, "guess": 0, "fake": 0, "miss": 0,
+                "lines": 0, "running": running}
+
+    try:
+        st = LOG.stat()
+        key = (st.st_mtime_ns, st.st_size)
+    except OSError:
+        key = None
+
+    if key is not None and key == _stats_cache["key"]:
+        cached = dict(_stats_cache["val"])
+        cached["running"] = running
+        return cached
+
+    s = {"hit": 0, "ai": 0, "guess": 0, "fake": 0, "miss": 0, "lines": 0}
     try:
         text = LOG.read_text(encoding="utf-8", errors="replace")
     except OSError:
+        s["running"] = running
         return s
-    s["lines"] = len(text.splitlines())
-    for line in text.splitlines():
+    lines = text.splitlines()
+    s["lines"] = len(lines)
+    for line in lines:
         if "[+]" in line:
             if " AI " in line:
                 s["ai"] += 1
@@ -234,6 +280,11 @@ def _stats_from_log() -> dict:
                 s["hit"] += 1
         elif "[?]" in line or "[!]" in line:
             s["miss"] += 1
+
+    _stats_cache["key"] = key
+    _stats_cache["val"] = dict(s)
+
+    s["running"] = running
     return s
 
 
@@ -253,7 +304,6 @@ def _tail(n: int = 200) -> list[str]:
 #   screencap 单帧 600-800ms，做连续画面必然卡；H.264 流能到 20fps 以上。
 # 流断了（设备掉线 / screenrecord 到时）由 ScreenStream 自己重启。
 _stream = None
-_stream_lock = threading.Lock()
 
 
 def _pick_serial() -> str:
@@ -270,18 +320,8 @@ def start_screen() -> None:
     except Exception as e:  # noqa: BLE001 - 缺 av 依赖时降级，不影响主功能
         print(f"[画面] 无法加载流模块（{e}），画面不可用")
         return
-    with _stream_lock:
-        _stream = ScreenStream(_adb(), _pick_serial, target_width=420,
-                               quality=62, max_fps=20)
-        _stream.start()
-
-
-def stop_screen() -> None:
-    global _stream
-    with _stream_lock:
-        if _stream is not None:
-            _stream.stop()
-            _stream = None
+    _stream = ScreenStream(_adb(), _pick_serial)
+    _stream.start()
 
 
 def screen_jpeg() -> bytes:
@@ -292,6 +332,7 @@ def screen_jpeg() -> bytes:
 def screen_meta() -> dict:
     s = _stream
     if s is None:
+        # 只在流模块加载失败时走到这里（正常情况 start_screen 会建实例）
         return {"mode": "off", "size": 0, "age": None, "fps": 0,
                 "decoded": 0, "err": "未启动"}
     return s.stats()
@@ -312,6 +353,9 @@ def start_bot(live: bool = True) -> dict:
             LOG.write_text("", encoding="utf-8")
         except OSError:
             pass
+        # 新一局从零开始：清掉统计缓存，避免沿用上一局的数
+        _stats_cache["key"] = None
+        _stats_cache["val"] = None
         args = [sys.executable, "-X", "utf8", str(SRC / "run_watch.py"),
                 "--max", "130", "--minutes", "30", "--wait", "600"]
         if live:
@@ -458,7 +502,21 @@ class Handler(BaseHTTPRequestHandler):
         为什么不用前端轮询 /api/screen.jpg：
         轮询间隔受 HTTP 往返限制，900ms 一次就只有 1fps。
         MJPEG 用一个持久连接推帧，浏览器原生支持，能跑满流的帧率。
+
+        先等首帧到手再发 200：端点在自己还不能产出内容时就回 200 是错的，
+        那样前端必须额外探 /api/screen.meta 才知道该不该显示。
+        等不到首帧就 503，<img> 的 onerror 自然触发。
         """
+        s = _stream
+        first_seq, first = (0, b"")
+        if s is not None:
+            first_seq, first = s.wait_frame(0, timeout=3.0)
+
+        if not first:
+            # 还没有任何帧（设备没连 / 刚启动）：明确告诉客户端失败
+            self.send_error(503, "no frame yet")
+            return
+
         self.send_response(200)
         self.send_header("Content-Type",
                          "multipart/x-mixed-replace; boundary=frame")
@@ -466,41 +524,24 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Connection", "close")
         self.end_headers()
 
-        last_count = -1
-        idle = 0
+        seq, data = first_seq, first
         try:
             while True:
+                # 拼成一个 bytes 一次写出：原实现每帧 4 次 write，
+                # 而 wbufsize=0 表示每次都是独立 sendall（20fps 就是 80 syscall/s）。
+                head = (b"--frame\r\nContent-Type: image/jpeg\r\n"
+                        + f"Content-Length: {len(data)}\r\n\r\n".encode())
+                self.wfile.write(head + data + b"\r\n")
+                self.wfile.flush()
+
                 s = _stream
                 if s is None:
-                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n"
-                                     b"Content-Length: 0\r\n\r\n\r\n")
-                    self.wfile.flush()
-                    time.sleep(0.5)
-                    idle += 1
-                    if idle > 120:
-                        return
-                    continue
-
-                meta = s.stats()
-                count = meta.get("decoded", 0)
-                if count == last_count:
-                    time.sleep(0.02)
-                    idle += 1
-                    if idle > 3000:
-                        return
-                    continue
-
-                last_count = count
-                idle = 0
-                data = s.latest()
-                if not data:
-                    time.sleep(0.05)
-                    continue
-                self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
-                self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode())
-                self.wfile.write(data)
-                self.wfile.write(b"\r\n")
-                self.wfile.flush()
+                    return
+                # 阻塞等下一条新帧；5 秒没有就断开让前端重连
+                new_seq, new_data = s.wait_frame(seq, timeout=5.0)
+                if not new_data:
+                    return
+                seq, data = new_seq, new_data
         except (BrokenPipeError, ConnectionResetError, OSError):
             return
 
@@ -559,9 +600,15 @@ def serve():
 
 
 def main() -> None:
+    """开发态入口：后端 + pywebview 原生窗口。
+
+    打包后（exe）不走这里 —— 见 app/launcher.py，它只用 serve()，
+    窗口交给 Edge --app（避免 pythonnet 的 .NET 打包问题）。
+    """
     threading.Thread(target=serve, daemon=True).start()
     start_screen()
     time.sleep(0.6)
+    import webview
     webview.create_window(
         "天学网单词PK助手", f"http://{HOST}:{PORT}/",
         width=1280, height=820, min_size=(1000, 680),

@@ -81,9 +81,6 @@ print("== 启动 ScreenStream（注入假命令）==")
 stream = ScreenStream(
     adb_path="unused",
     serial_getter=lambda: "fake-serial",
-    target_width=420,
-    quality=62,
-    max_fps=20,
     cmd_builder=lambda serial: [sys.executable, "-X", "utf8", str(FAKE)],
 )
 stream.start()
@@ -112,6 +109,23 @@ check("不超过 22fps（限帧生效）", real_fps <= 22, True)
 # 假流的供帧节奏不稳（按块 flush），这个断言只用来说明链路活着；
 # 真机 screenrecord 是稳定 30fps 源，实际帧率由 max_fps 决定。
 check("至少 5fps（链路活着）", real_fps >= 5, True)
+
+# wait_frame：阻塞等新帧（MJPEG 靠它，不靠轮询）
+seq0 = stream.stats()["decoded"]
+t0 = time.time()
+new_seq, data = stream.wait_frame(0, timeout=3.0)
+dt = time.time() - t0
+print(f"  wait_frame: seq={new_seq} size={len(data)} 等待 {dt*1000:.0f}ms")
+check("wait_frame 拿到帧", len(data) > 0, True)
+check("wait_frame 快于 3 秒", dt < 3.0, True)
+
+# 用「当前最新 seq」去等，超时应返回空（没有更新帧时不该假装有）
+stream.stop()          # 先停掉解码线程，保证不会再产帧
+cur = stream.stats()["decoded"]
+_, data2 = stream.wait_frame(cur, timeout=0.4)
+check("无新帧时超时返回空", data2, b"")
+stream.start()         # 恢复，后面还要测停止行为
+time.sleep(0.5)
 
 before = st["decoded"]
 stream.stop()

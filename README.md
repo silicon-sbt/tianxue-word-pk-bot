@@ -8,7 +8,13 @@
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)]()
 [![ADB](https://img.shields.io/badge/Requires-ADB-3DDC84?logo=android&logoColor=white)]()
-[![Tests](https://img.shields.io/badge/Tests-5%20suites-brightgreen)]()
+[![License](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Tests](https://img.shields.io/badge/Tests-7%20suites%20%C2%B7%2039%20cases-brightgreen)]()
+
+[![Version](https://img.shields.io/badge/Version-v1.0.0-1D1D1F)](../../releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/silicon-sbt/tianxue-word-pk-bot/total?color=1D1D1F)](../../releases)
+[![Stars](https://img.shields.io/github/stars/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](../../stargazers)
+[![Last Commit](https://img.shields.io/github/last-commit/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](../../commits)
 
 </div>
 
