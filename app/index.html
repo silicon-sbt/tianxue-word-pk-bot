@@ -451,9 +451,11 @@
  .screen-block{flex:0 0 auto}
  }
  .screen-body img{
- width:100%;height:100%;object-fit:contain;display:block;
- background:#111;
- }
+    width:100%;height:100%;object-fit:contain;display:block;
+  }
+  /* hidden 必须能压过 display:block，否则空帧就是一个黑块 */
+  .screen-body img[hidden]{display:none}
+  .screen-body img:not([src]),.screen-body img[src='']{display:none}
  .screen-body{background:var(--surface-2);position:relative}
 </style>
 </head>
@@ -906,30 +908,51 @@ $('btnCfgSave').onclick = async () => {
  ? '\u2705 已保存 — 跑着的这一局下一题就生效'
  : '\u2705 已保存', 'ok');
 };
-/* ---------------- 手机实时画面 ---------------- */
-let screenTimer = null, lastFrameUrl = '';
-function startScreenLoop(){
- if (screenTimer) return;
- const img = $('screenImg'), ph = $('ph');
- const tick = () => {
- if (!img) return;
- const url = '/api/screen.jpg?t=' + Date.now();
- const probe = new Image();
- probe.onload = () => {
- img.src = url;
- img.hidden = false;
- ph.style.display = 'none';
- };
- probe.onerror = () => {
- img.hidden = true;
- ph.style.display = '';
- };
- probe.src = url;
- };
- tick();
- screenTimer = setInterval(tick, 900);
+/* ---------------- 手机实时画面（MJPEG 长连接）----------------
+   空闲时不能直接开 MJPEG：端点即使没帧也会返回 200，
+   浏览器 onload 一触发 img 就显示，结果是块黑屏把占位文字挤走。
+   所以先探 meta，确认真有帧再连。 */
+let screenOn = false, screenRetry = null;
+
+async function probeFrame(){
+  try{
+    const r = await fetch('/api/screen.meta');
+    const m = await r.json();
+    return !!(m && m.size > 0 && !m.err);
+  }catch(e){ return false; }
 }
-startScreenLoop();
+
+async function startScreen(){
+  if (screenOn) return;
+  const img = $('screenImg'), ph = $('ph');
+  if (!img) return;
+
+  if (!await probeFrame()){
+    showPlaceholder();
+    if (!screenRetry) screenRetry = setTimeout(startScreen, 1500);
+    return;
+  }
+
+  screenOn = true;
+  img.onload = () => {
+    img.hidden = false;
+    if (ph) ph.style.display = 'none';
+  };
+  img.onerror = () => {
+    screenOn = false;
+    showPlaceholder();
+    if (!screenRetry) screenRetry = setTimeout(startScreen, 2000);
+  };
+  img.src = '/api/screen.mjpeg?t=' + Date.now();
+}
+
+function showPlaceholder(){
+  const img = $('screenImg'), ph = $('ph');
+  if (img){ img.hidden = true; img.removeAttribute('src'); }
+  if (ph) ph.style.display = '';
+}
+
+startScreen();
 /* ---------------- 启动 ---------------- */
 (async () => {
  await refresh();

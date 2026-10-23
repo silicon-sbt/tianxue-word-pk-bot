@@ -249,9 +249,11 @@ def _tail(n: int = 200) -> list[str]:
 
 # ------------------------------------------------------------------ 手机画面
 
-_screen = {"jpeg": b"", "ts": 0.0, "err": "", "ms": 0.0}
-_screen_lock = threading.Lock()
-_screen_stop = threading.Event()
+# 画面走 screenrecord 的 H.264 流（见 app/screen_stream.py）：
+#   screencap 单帧 600-800ms，做连续画面必然卡；H.264 流能到 20fps 以上。
+# 流断了（设备掉线 / screenrecord 到时）由 ScreenStream 自己重启。
+_stream = None
+_stream_lock = threading.Lock()
 
 
 def _pick_serial() -> str:
@@ -259,63 +261,40 @@ def _pick_serial() -> str:
     return st.get("serial", "") if st.get("connected") else ""
 
 
-def _grab_loop() -> None:
-    """持续抓帧，维护「最新一帧」缓存。
+def start_screen() -> None:
+    global _stream
+    if _stream is not None:
+        return
+    try:
+        from screen_stream import ScreenStream
+    except Exception as e:  # noqa: BLE001 - 缺 av 依赖时降级，不影响主功能
+        print(f"[画面] 无法加载流模块（{e}），画面不可用")
+        return
+    with _stream_lock:
+        _stream = ScreenStream(_adb(), _pick_serial, target_width=420,
+                               quality=62, max_fps=20)
+        _stream.start()
 
-    单帧 600-800ms 是 adb 截图协议的上限，这里不跟它较劲：
-    抓帧线程一直跑，前端随时取最新帧，画面连续但频率约 1.3fps。
-    """
-    from PIL import Image
 
-    while not _screen_stop.is_set():
-        t0 = time.perf_counter()
-        try:
-            serial = _pick_serial()
-            if not serial:
-                with _screen_lock:
-                    _screen["err"] = "未连接"
-                _screen_stop.wait(0.5)
-                continue
-
-            p = subprocess.run(
-                [_adb(), "-s", serial, "exec-out", "screencap", "-p"],
-                capture_output=True, timeout=8)
-            if p.returncode == 0 and p.stdout:
-                img = Image.open(io.BytesIO(p.stdout)).convert("RGB")
-                w, h = img.size
-                tw = 420
-                img = img.resize((tw, int(h * tw / w)), Image.LANCZOS)
-                buf = io.BytesIO()
-                img.save(buf, "JPEG", quality=62)
-                ms = (time.perf_counter() - t0) * 1000
-                with _screen_lock:
-                    _screen["jpeg"] = buf.getvalue()
-                    _screen["ts"] = time.time()
-                    _screen["err"] = ""
-                    _screen["ms"] = ms
-            else:
-                with _screen_lock:
-                    _screen["err"] = "截图失败"
-        except Exception as e:  # noqa: BLE001
-            with _screen_lock:
-                _screen["err"] = type(e).__name__
-        # 抓帧本身要 0.6-0.8s，这里只留很短的空隙
-        _screen_stop.wait(0.15)
+def stop_screen() -> None:
+    global _stream
+    with _stream_lock:
+        if _stream is not None:
+            _stream.stop()
+            _stream = None
 
 
 def screen_jpeg() -> bytes:
-    with _screen_lock:
-        return _screen["jpeg"]
+    s = _stream
+    return s.latest() if s is not None else b""
 
 
 def screen_meta() -> dict:
-    with _screen_lock:
-        age = (round(time.time() - _screen["ts"], 1)
-               if _screen["ts"] else None)
-        return {"ts": _screen["ts"], "err": _screen["err"],
-                "size": len(_screen["jpeg"]), "age": age,
-                "grab_ms": round(_screen["ms"])}
-
+    s = _stream
+    if s is None:
+        return {"mode": "off", "size": 0, "age": None, "fps": 0,
+                "decoded": 0, "err": "未启动"}
+    return s.stats()
 
 # ------------------------------------------------------------------ 启停
 
@@ -460,6 +439,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"text": read_config(), "summary": config_summary()})
         if p == "/api/conn":
             return self._json(conn_scan())
+        if p == "/api/screen.mjpeg":
+            return self._mjpeg()
         if p == "/api/screen.meta":
             return self._json(screen_meta())
         if p == "/api/screen.jpg":
@@ -470,6 +451,58 @@ class Handler(BaseHTTPRequestHandler):
         if p == "/api/stream":
             return self._stream()
         self._send(404, b"not found")
+
+    def _mjpeg(self):
+        """MJPEG 长连接：一个请求持续推帧。
+
+        为什么不用前端轮询 /api/screen.jpg：
+        轮询间隔受 HTTP 往返限制，900ms 一次就只有 1fps。
+        MJPEG 用一个持久连接推帧，浏览器原生支持，能跑满流的帧率。
+        """
+        self.send_response(200)
+        self.send_header("Content-Type",
+                         "multipart/x-mixed-replace; boundary=frame")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Connection", "close")
+        self.end_headers()
+
+        last_count = -1
+        idle = 0
+        try:
+            while True:
+                s = _stream
+                if s is None:
+                    self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n"
+                                     b"Content-Length: 0\r\n\r\n\r\n")
+                    self.wfile.flush()
+                    time.sleep(0.5)
+                    idle += 1
+                    if idle > 120:
+                        return
+                    continue
+
+                meta = s.stats()
+                count = meta.get("decoded", 0)
+                if count == last_count:
+                    time.sleep(0.02)
+                    idle += 1
+                    if idle > 3000:
+                        return
+                    continue
+
+                last_count = count
+                idle = 0
+                data = s.latest()
+                if not data:
+                    time.sleep(0.05)
+                    continue
+                self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n")
+                self.wfile.write(f"Content-Length: {len(data)}\r\n\r\n".encode())
+                self.wfile.write(data)
+                self.wfile.write(b"\r\n")
+                self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            return
 
     def _stream(self):
         self.send_response(200)
@@ -527,7 +560,7 @@ def serve():
 
 def main() -> None:
     threading.Thread(target=serve, daemon=True).start()
-    threading.Thread(target=_grab_loop, daemon=True).start()
+    start_screen()
     time.sleep(0.6)
     webview.create_window(
         "天学网单词PK助手", f"http://{HOST}:{PORT}/",
