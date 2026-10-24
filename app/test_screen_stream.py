@@ -15,6 +15,7 @@ from PIL import Image
 
 HERE = pathlib.Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
+sys.path.insert(0, str(HERE.parent / "src"))   # proc.py 在 src/
 
 from screen_stream import ScreenStream  # noqa: E402
 

@@ -129,7 +129,39 @@ def open_window(edge: str, profile_dir: Path) -> subprocess.Popen | None:
         "--disable-features=msEdgeSync,Translate,msEdgeSidebar,msEdgeCollections",
         "--disable-component-update",
         "--no-service-autorun",
+        # 沙箱必须禁用：本机 Edge 156 由本程序（PyInstaller 冻结的无控制台进程）
+        # 拉起时，renderer 进程一个都创建不出来，窗口一直是空白、标题停在
+        # 127.0.0.1_/。实测加 --no-sandbox 后 renderer 立刻 7-8 个、页面 6 秒内加载。
+        # 注意不要加 --disable-gpu-sandbox：它是 Edge 不支持的标志，提示信息里
+        # 会点名它；--no-sandbox 同样会弹出「不受支持的命令行标志」黄色横条，
+        # 所以后面必须跟 --test-type 把这条提示关掉（Chromium 预留的测试开关）。
+        # 本程序只访问 127.0.0.1 的本地页面，禁用沙箱风险可控。
+        "--no-sandbox",
+        "--test-type",
     ]
+    # 排障用：PK_EDGE_FLAGS="--no-sandbox --disable-gpu" 可以临时追加参数，
+    # 不用为了试一个组合反复改代码重打包。
+    extra = os.environ.get("PK_EDGE_FLAGS", "").strip()
+    if extra:
+        args += extra.split()
+        _dbg(f"extra edge flags: {extra}")
+    # 调试开关：设了 PK_EDGE_DEBUG=1 就让 Chromium 自己写日志到 logs/edge.log，
+    # 用来查「页面永远不加载 / renderer 起不来」这类窗口侧问题。
+    stderr_target = subprocess.DEVNULL
+    if os.environ.get("PK_EDGE_DEBUG"):
+        try:
+            log_dir = app_root() / "logs"
+            log_dir.mkdir(parents=True, exist_ok=True)
+            err_file = (log_dir / "edge_stderr.log").open("ab")
+            stderr_target = err_file
+            args += [
+                "--enable-logging",
+                "--v=1",
+                f"--log-file={log_dir / 'edge.log'}",
+            ]
+            _dbg(f"edge debug logging on: {log_dir / 'edge.log'}")
+        except Exception:  # noqa: BLE001
+            pass
     # 冻结态（--noconsole）下父进程没有控制台，子进程继承句柄会失败。
     # DETACHED_PROCESS 让 Edge 完全脱离父进程的会话/控制台，
     # 这是 GUI 程序启动 GUI 程序的标准做法。
@@ -143,7 +175,7 @@ def open_window(edge: str, profile_dir: Path) -> subprocess.Popen | None:
             args,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_target,
             close_fds=True,
             creationflags=flags,
         )
@@ -271,11 +303,23 @@ def _port_alive() -> bool:
         return False
 
 
+def _run_hidden(args: list[str], **kw) -> subprocess.CompletedProcess:
+    """无控制台地跑控制台程序。
+
+    打包后主程序没有控制台，每次 spawn tasklist / adb 这类控制台程序，
+    Windows 都会给它分配一个新的控制台窗口 —— 主循环每 2 秒查一次
+    msedge 进程，屏幕上就是每 2 秒闪一次黑框。CREATE_NO_WINDOW 关掉它。
+    """
+    if os.name == "nt":
+        kw.setdefault("creationflags", 0x08000000)
+    return subprocess.run(args, **kw)
+
+
 def _msedge_pids() -> set[int]:
     """当前所有 msedge 进程 PID。用 tasklist，避免引入额外依赖。"""
     try:
-        p = subprocess.run(["tasklist", "/FI", "IMAGENAME eq msedge.exe", "/FO", "CSV", "/NH"],
-                           capture_output=True, timeout=10)
+        p = _run_hidden(["tasklist", "/FI", "IMAGENAME eq msedge.exe", "/FO", "CSV", "/NH"],
+                        capture_output=True, timeout=10)
         out = p.stdout.decode("utf-8", "replace")
         pids = set()
         import csv as _csv

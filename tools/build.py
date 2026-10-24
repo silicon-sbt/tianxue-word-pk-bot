@@ -36,6 +36,9 @@ RUNTIME_FILES = [
 RUNTIME_DIRS = [
     ("src", "src"),
     ("tools", "tools"),
+    # app/ 必须一起带上：main.py / screen_stream.py 在这个目录，
+    # 少了它 exe 起来后后端导入失败，表现为「后端 20 秒内没起来」。
+    ("app", "app"),
 ]
 RUNTIME_EMPTY_DIRS = ["logs", "data"]
 

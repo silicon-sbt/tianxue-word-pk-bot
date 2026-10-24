@@ -5,6 +5,7 @@ import os
 import re
 import shutil
 import subprocess
+import proc
 import time
 
 from pk_core import decode_dump
@@ -48,7 +49,7 @@ ADB = _find_adb()
 
 
 def _run(args: list[str], timeout: float = 20.0, binary: bool = False):
-    p = subprocess.run(
+    p = proc.run(
         [ADB] + args,
         capture_output=True,
         timeout=timeout,
@@ -114,7 +115,7 @@ class Device:
         last = ""
         for attempt in range(retries):
             # 不用 self.shell（它遇到非零码会抛），这里要容忍失败后重试
-            p = subprocess.run(
+            p = proc.run(
                 [ADB] + self._args("shell", "uiautomator dump /sdcard/_pk_ui.xml"),
                 capture_output=True, timeout=30,
             )

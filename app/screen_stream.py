@@ -21,6 +21,7 @@ import subprocess
 import threading
 import time
 
+import proc as nowin
 import av
 from PIL import Image
 
@@ -92,8 +93,8 @@ class ScreenStream:
         tw = self.TARGET_WIDTH
         th = int(round(2800 * tw / 1260 / 2) * 2)   # 1260x2800 的回退比例
         try:
-            p = subprocess.run([self.adb, "-s", serial, "shell", "wm", "size"],
-                               capture_output=True, timeout=8)
+            p = nowin.run([self.adb, "-s", serial, "shell", "wm", "size"],
+                          capture_output=True, timeout=8)
             out = (p.stdout + p.stderr).decode("utf-8", "replace")
             m = re.search(r"(\d+)x(\d+)", out)
             if m:
@@ -174,7 +175,7 @@ class ScreenStream:
         ]
 
     def _stream_once(self, serial: str) -> None:
-        proc = subprocess.Popen(
+        proc = nowin.popen(
             self._cmd_builder(serial),
             stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, bufsize=0)
         self._proc = proc

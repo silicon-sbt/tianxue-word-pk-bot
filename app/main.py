@@ -46,6 +46,8 @@ WIRELESS_STATE = ROOT / "data" / "wireless.json"
 sys.path.insert(0, str(SRC))
 sys.path.insert(0, str(ROOT / "tools"))
 
+import proc  # noqa: E402  子进程工具：统一加 CREATE_NO_WINDOW，不弹控制台
+
 HOST, PORT = "127.0.0.1", 8791
 
 _proc: subprocess.Popen | None = None
@@ -63,7 +65,7 @@ def _adb() -> str:
 
 
 def _run(args: list[str], timeout: float = 30.0) -> tuple[int, str]:
-    p = subprocess.run([_adb()] + args, capture_output=True, timeout=timeout)
+    p = proc.run([_adb()] + args, capture_output=True, timeout=timeout)
     return p.returncode, (p.stdout + p.stderr).decode("utf-8", "replace").strip()
 
 
@@ -369,8 +371,8 @@ def start_bot(live: bool = True) -> dict:
         if live:
             args.append("--live")
         flags = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
-        _proc = subprocess.Popen(args, cwd=str(ROOT), stdout=subprocess.DEVNULL,
-                                 stderr=subprocess.DEVNULL, creationflags=flags)
+        _proc = proc.popen(args, cwd=str(ROOT), stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL, creationflags=flags)
         return {"ok": True, "msg": "已启动" + ("" if live else "（只读）")}
 
 
@@ -382,8 +384,8 @@ def stop_bot() -> dict:
             return {"ok": False, "msg": "没在跑"}
         try:
             if os.name == "nt":
-                subprocess.run(["taskkill", "/PID", str(_proc.pid), "/T", "/F"],
-                               capture_output=True, timeout=10)
+                proc.run(["taskkill", "/PID", str(_proc.pid), "/T", "/F"],
+                         capture_output=True, timeout=10)
             else:
                 _proc.terminate()
         except Exception:  # noqa: BLE001

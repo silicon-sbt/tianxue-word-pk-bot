@@ -1,16 +1,14 @@
 # -*- mode: python ; coding: utf-8 -*-
 """PyInstaller 打包配置。
 
-产物：dist/天学网单词PK助手/天学网单词PK助手.exe（单目录）
+产物：dist/TianxuePK/TianxuePK.exe（单目录）
 
 关键决策：
-  1. 不用 pywebview。它的 Windows 后端依赖 pythonnet(.NET)，PyInstaller 打包后
-     CLR 找不到 .NETStandard 运行时，报
-       RuntimeError: Failed to resolve Python.Runtime.Loader.Initialize
-     实测重定位 Python.Runtime.dll 无效（CLR 初始化问题，不是路径问题）。
-     改用 Edge --app 套壳：零 .NET 依赖，体积从 110MB 降到 35MB 左右。
-  2. 单目录而非单文件。单文件每次启动解压 100MB+，冷启动 5-10 秒。
-  3. console=False —— 不弹黑框（用户明确要求）。
+  1. 不用 pywebview：它的 Windows 后端依赖 pythonnet(.NET)，打包后 CLR 初始化
+     失败（Failed to resolve Python.Runtime.Loader.Initialize），换 Edge --app 套壳。
+  2. 单目录而非单文件：单文件每次启动要解压 100MB+，冷启动 5-10 秒。
+  3. console=False —— 不弹黑框。还要配合 src/proc.py 给所有子进程加
+     CREATE_NO_WINDOW，否则每次调 adb 都会闪一个控制台窗口。
 """
 import sys
 from pathlib import Path
@@ -31,6 +29,7 @@ a = Analysis(
         "PIL.ImageGrab",
         "adb_parse",
         "adb_driver",
+        "proc",          # 子进程工具：封了 CREATE_NO_WINDOW，不弹控制台
         "screen_stream",
         "config",
         "ai_judge",
@@ -81,5 +80,5 @@ coll = COLLECT(
     strip=False,
     upx=False,
     upx_exclude=[],
-    name="TianxuePK",   # ASCII 名：中文名会让 Inno 安装包初始化失败
+    name="TianxuePK",
 )
