@@ -1,4 +1,5 @@
 """诊断当前屏幕：打印所有文本节点与分类结果。"""
+from _paths import ROOT
 import pathlib
 import re
 import sys
@@ -6,7 +7,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import parse_screen, split_prompt  # noqa: E402
 
-path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else r"E:\code\单词pk\samples\live1.xml")
+path = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "samples" / "live1.xml")
 raw = path.read_text(encoding="utf-8", errors="replace")
 
 print(f"file: {path}")

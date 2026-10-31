@@ -11,7 +11,7 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(r"E:\code\单词pk")
+ROOT = Path(__file__).resolve().parent.parent
 PY = sys.executable
 BASE = "http://127.0.0.1:8791"
 PID_FILE = ROOT / "logs" / "smoke.pid"
@@ -41,16 +41,16 @@ def post(path, body=None, timeout=10):
 def kill_existing():
     """杀掉所有 app/main.py 实例与占用 8791 的进程。
 
-    只按 PID_FILE kill 不够：之前跑残留的实例会占着端口，
-    新实例起不来但接口仍然响应，测试连到的是旧代码 —— 典型的假绿。
+    只按 PID_FILE kill 不够：上次运行残留的实例会占着端口，
+    新实例起不来但接口仍然响应，测试连到的是旧代码，结果会失真。
     """
     import subprocess as sp
     # 1) 按命令行匹配所有 app/main.py
     try:
         ps = sp.run(["powershell", "-NoProfile", "-Command",
                      "Get-CimInstance Win32_Process | "
-                     "Where-Object { \.CommandLine -like '*app*main.py*' } | "
-                     "ForEach-Object { \.ProcessId }"],
+                     "Where-Object { $_.CommandLine -like '*app*main.py*' } | "
+                     "ForEach-Object { $_.ProcessId }"],
                     capture_output=True, timeout=20)
         for line in ps.stdout.decode("utf-8", "replace").split():
             if line.strip().isdigit():
@@ -81,11 +81,27 @@ def kill_existing():
     raise SystemExit("端口 8791 仍被占用，无法开始冒烟测试")
 
 
+def device_awake() -> bool:
+    """设备是否亮屏。
+
+    锁屏/休眠时 screenrecord 不会产出画面帧，这是系统行为，不是程序故障。
+    冒烟测试要能区分「设备没连」「设备锁屏」和「画面链路坏了」。
+    """
+    try:
+        sys.path.insert(0, str(ROOT / "src"))
+        from adb_driver import ADB
+        p = subprocess.run([ADB, "shell", "dumpsys", "power"],
+                           capture_output=True, timeout=15)
+        return "mWakefulness=Awake" in p.stdout.decode("utf-8", "replace")
+    except Exception:  # noqa: BLE001
+        return True
+
+
 def main():
     print("== 1. 启动 App ==")
     kill_existing()
     proc = subprocess.Popen(
-        [PY, "-X", "utf8", str(ROOT / "app" / "main.py")],
+        [PY, "-X", "utf8", str(ROOT / "app" / "main.py"), "--serve-only"],
         cwd=str(ROOT), stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     PID_FILE.write_text(str(proc.pid))
     print(f"  PID {proc.pid}")
@@ -139,11 +155,16 @@ def main():
         ok("首页", False, str(e)[:60])
 
     print("\n== 3. 画面端点（按实际设备状态分支）==")
-    # 有无设备决定期望值：无设备必须 404/503，有设备必须给真帧
+    # 有无设备、是否亮屏决定期望值：能出帧就必须是真帧，否则必须 404/503
     has_dev = json.loads(get("/api/conn")[1])["status"]["connected"]
-    print(f"  当前设备: {'已连接' if has_dev else '未连接'}")
-
+    awake = device_awake() if has_dev else False
     if has_dev:
+        state = "已连接，屏幕亮" if awake else "已连接，屏幕灭/锁屏（不出帧属正常）"
+    else:
+        state = "未连接"
+    print(f"  当前设备: {state}")
+
+    if has_dev and awake:
         # 有设备：等一会儿让流产出首帧
         deadline = time.time() + 20
         frame_ok = False
@@ -175,17 +196,17 @@ def main():
         r = urllib.request.urlopen(BASE + "/api/screen.mjpeg", timeout=8)
         ctype = r.headers.get("Content-Type", "")
         is_mp = "multipart/x-mixed-replace" in ctype
-        if has_dev:
-            ok("MJPEG 有设备时返回 multipart", is_mp, ctype)
+        if has_dev and awake:
+            ok("MJPEG 有画面时返回 multipart", is_mp, ctype)
             r.read(64)
         else:
-            ok("MJPEG 无设备时不该回 200", False, f"200 {ctype}")
+            ok("MJPEG 无画面时不该回 200", False, f"200 {ctype}")
         r.close()
     except urllib.error.HTTPError as e:
-        if has_dev:
-            ok("MJPEG 有设备时不该 503", False, f"实际 {e.code}")
+        if has_dev and awake:
+            ok("MJPEG 有画面时不该 503", False, f"实际 {e.code}")
         else:
-            ok("MJPEG 无设备时返回 503", e.code == 503, f"实际 {e.code}")
+            ok("MJPEG 无画面时返回 503", e.code == 503, f"实际 {e.code}")
     except Exception as e:
         ok("MJPEG 端点", False, str(e)[:80])
 
@@ -221,7 +242,10 @@ def main():
     ok("10 秒内进程存活且接口可用", alive)
 
     # 检查 stderr 有没有异常堆栈
-    proc.terminate()
+    # 按进程树结束：只 terminate 父进程会留下 adb / 手机端 screenrecord 孤儿，
+    # 下一轮可能因此拿不到画面帧。
+    subprocess.run(["taskkill", "/PID", str(proc.pid), "/T", "/F"],
+                   capture_output=True, timeout=15)
     try:
         proc.wait(timeout=5)
     except subprocess.TimeoutExpired:
@@ -229,7 +253,7 @@ def main():
     err = proc.stderr.read().decode("utf-8", "replace")
     crash_words = ["Traceback", "Exception", "Error:"]
     has_crash = any(w in err for w in crash_words)
-    ok("stderr 无异常堆栈", not has_crash, err[:200] if has_crash else "")
+    ok("stderr 无异常堆栈", not has_crash, err[:1200] if has_crash else "")
     if err.strip() and not has_crash:
         print(f"    stderr（非异常输出）: {err.strip()[:200]}")
 

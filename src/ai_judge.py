@@ -3,7 +3,7 @@
 为什么值得做：本地词库约 12% 的题判不出来（教材释义不在 ed.db 里）。
 这些题原来只能猜（1/6 概率），交给 AI 能显著提高正确率。
 
-延迟：Jev 这类决策模型实测 70-500ms 一次调用（也有本机实测 269ms 的记录），
+延迟：Jev 这类决策模型单次调用通常在 70-500ms，
 配合读屏的 ~3.5s，6 秒限时内来得及。
 
 两种模式：
@@ -14,9 +14,10 @@
 两种模式返回同一种结构，所以解析只有一份：
   {"answers": {"answer": {"type": "choice", "choice": "o3", "confidence": 0.9}}}
 
-【本机实测的坑】api.typesafe.ai 的 DNS 被污染成 28.0.1.x（假地址），
-直连必然连接重置。所以先走正常请求，网络层一失败就改走 DoH 查真 IP +
-直连（SNI 与 Host 仍用真域名）。这一步不做的话在这台机器上根本连不上。
+网络说明：部分网络环境下 api.typesafe.ai 的 DNS 会被污染（解析到 28.0.1.x
+之类的假地址），直连会连接重置。程序先走正常请求，网络层一失败就改用
+DoH 查真实 IP 再直连（SNI 与 Host 仍用域名）。没有这条备用通道时，
+受污染的网络下无法连接。
 """
 from __future__ import annotations
 
@@ -50,7 +51,7 @@ _SYSTEM = (
 # TypeSafe 官方端点
 TYPESAFE_ENDPOINT = "https://api.typesafe.ai/v1/systemone"
 
-# DoH 解析（用于绕过本机 DNS 污染）
+# DoH 解析（DNS 被污染时的备用通道）
 _DOH = [
     "https://dns.google/resolve?name={host}&type=A",
     "https://cloudflare-dns.com/dns-query?name={host}&type=A",
@@ -178,10 +179,10 @@ def _loose_json(s: str) -> object:
 # ------------------------------------------------------------------ 传输
 
 def resolve_real_ip(host: str) -> list[str]:
-    """用 DoH 查真实 IP，绕开本机被污染的 DNS。
+    """用 DoH 查真实 IP，绕开被污染的 DNS。
 
-    只对域名有意义。传进来 IP 字面量（127.0.0.1、10.x 等）时直接返回空——
-    否则超时后会给本地地址白查一圈 DoH，把整个答题预算拖爆（实测踩过）。
+    只对域名有意义。传进来 IP 字面量（127.0.0.1、10.x 等）时直接返回空：
+    否则超时后会给本地地址白查一圈 DoH，拖掉整个答题预算。
     """
     if not host or _is_ip_literal(host) or host.lower() == "localhost":
         return []
@@ -240,7 +241,7 @@ def post_json(url: str, payload: dict, headers: dict, timeout: float) -> object:
     """发 JSON，总耗时不超过 timeout。
 
     先走正常请求（DNS 正常时最快）；网络层失败就改走 DoH + 真 IP 直连。
-    本机 DNS 把 api.typesafe.ai 污染成 28.0.1.x，所以第二条路是必需的。
+    在 DNS 被污染的网络里，第二条路是必需的。
 
     硬截止：两条路共用同一个预算。否则第一次超时后再去查 DoH，
     总耗时会翻几倍——而这里的预算来自答题倒计时，超了就是丢分。

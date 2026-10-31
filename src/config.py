@@ -12,6 +12,8 @@ from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CONFIG_PATH = ROOT / "config.toml"
+# 界面上填的密钥存这里。config.toml 是要提交到公开仓库的，绝不能写进去。
+KEY_FILE = ROOT / "data" / "apikey.txt"
 
 # 与 config.toml 一一对应。config.toml 缺失或写坏时用这套。
 DEFAULTS: dict[str, dict[str, Any]] = {
@@ -31,15 +33,18 @@ DEFAULTS: dict[str, dict[str, Any]] = {
         "enabled": False,
         "target_accuracy": 0.70,
     },
+    "ui": {
+        "show_api_key": False,
+    },
 }
 
 
 def _from_env_or_registry(name: str) -> str:
     """先读进程环境变量，读不到再读 Windows 用户级注册表。
 
-    为什么需要注册表这一步：用 setx / SetEnvironmentVariable 设完变量后，
-    已经在运行的 explorer.exe 不会立刻更新自己的环境块，于是它双击启动的
-    .bat 里读不到——除非注销重登或重启。直接查注册表就绕开了这个坑。
+    为什么需要注册表这一步：用 setx 设完变量后，已经在运行的 explorer.exe
+    不会立刻更新环境块，它启动的程序读不到新变量——除非注销重登或重启。
+    直接查注册表可以立即生效。
     """
     v = os.environ.get(name)
     if v:
@@ -55,6 +60,14 @@ def _from_env_or_registry(name: str) -> str:
         return ""
 
 
+def _from_key_file() -> str:
+    """界面上保存的密钥（data/apikey.txt）。不存在或读不了就返回空。"""
+    try:
+        return KEY_FILE.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+
+
 class Config:
     """点号取值：cfg.ai.enabled / cfg.get("score", "target_accuracy")"""
 
@@ -65,12 +78,26 @@ class Config:
                 if isinstance(values, dict):
                     self._d.setdefault(section, {}).update(values)
 
-        # api_key 允许用环境变量，避免把密钥写进文件（这文件是要提交的）
+        # api_key 的取值顺序：config.toml（显式写的）> 界面保存的文件 > 环境变量/注册表。
+        # 界面上填的算「用户刚刚明确指定」，所以排在环境变量前面。
         ai = self._d["ai"]
+        self.key_source = "config" if ai.get("api_key") else ""
         if not ai.get("api_key"):
-            ai["api_key"] = (_from_env_or_registry("PK_API_KEY")
-                             or _from_env_or_registry("TYPESAFE_API_KEY")
-                             or "")
+            local = _from_key_file()
+            if local:
+                ai["api_key"] = local
+                self.key_source = "file"
+        if not ai.get("api_key"):
+            v = _from_env_or_registry("PK_API_KEY")
+            src = "env:PK_API_KEY"
+            if not v:
+                v = _from_env_or_registry("TYPESAFE_API_KEY")
+                src = "env:TYPESAFE_API_KEY"
+            if v:
+                ai["api_key"] = v
+                self.key_source = src
+        if not ai["api_key"]:
+            self.key_source = "none"
 
         self._coerce()
 
@@ -92,6 +119,7 @@ class Config:
         flag("ai", "remember")
         num("ai", "timeout", float)
         flag("score", "enabled")
+        flag("ui", "show_api_key")
         num("score", "target_accuracy", float)
 
         # 目标正确率夹到合理区间，避免配置写 70（当成 70 倍）之类

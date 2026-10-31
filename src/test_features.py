@@ -50,7 +50,7 @@ check("未知字段不影响", Config({"ai": {"nope": 1}}).ai.enabled, False)
 check("部分配置合并", Config({"ai": {"enabled": True}}).ai.timeout, DEFAULTS["ai"]["timeout"])
 
 # 坏 TOML 不应该崩
-bad = pathlib.Path(r"E:\code\单词pk\logs\_bad.toml")
+bad = pathlib.Path(__file__).resolve().parent.parent / "logs" / "_bad.toml"
 bad.parent.mkdir(parents=True, exist_ok=True)
 bad.write_text("this is [not valid toml", encoding="utf-8")
 check("坏 TOML 回退默认", load(bad).ai.enabled, False)

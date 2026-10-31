@@ -3,10 +3,11 @@
 关键怀疑：dump 耗时 3.3s，期间题目可能已切换，
 导致「题干是第 N 题，选项是第 N+1 题」的错配 => 判定看似成功但实际答错题。
 """
+from _paths import ROOT
 import pathlib
 import re
 
-log = pathlib.Path(r"E:\code\单词pk\logs\run2_final.txt").read_text(
+log = (ROOT / "logs" / "run2_final.txt").read_text(
     encoding="utf-8", errors="replace")
 
 # 抓取所有 "题干 -> 判定" 行

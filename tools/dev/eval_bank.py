@@ -1,4 +1,5 @@
 """离线评估：用真实 PK 题目检验词库判定准确率。"""
+from _paths import ROOT
 import json
 import pathlib
 import sys
@@ -6,7 +7,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import WordBank, sense_similarity  # noqa: E402
 
-BANK = pathlib.Path(r"E:\code\单词pk\data\wordbank.json")
+BANK = ROOT / "data" / "wordbank.json"
 
 
 def load() -> WordBank:

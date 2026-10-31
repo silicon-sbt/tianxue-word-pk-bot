@@ -70,7 +70,7 @@ def _screen_signature(xml: str) -> str:
 def _looks_transitional(xml: str) -> bool:
     """零成本判断是否读到了「切题瞬间」的混合画面。
 
-    依据（实测）：正常一题 6 个选项；切题瞬间会读到 7 个，且**末两项完全相同**。
+    依据：正常一题 6 个选项；切题瞬间会读到 7 个，且末两项完全相同。
 
     注意：不能对全部 text 节点做「有重复就算异常」——无障碍树里本来就有大量
     空 text 和重复文本（如 'Score: 0' 之类）。只认「非空文本末尾两项相同」。
@@ -106,10 +106,10 @@ class Device:
     def dump_ui(self, retries: int = 3) -> str:
         """dump 当前界面 XML，返回已解码的 str。
 
-        关键坑：
+        注意事项：
           1) 必须用 exec-out 读原始字节再自己解码。走 `adb shell cat` + PowerShell
-             重定向会把 UTF-16 输出二次破坏，所有 text="..." 提取失败。
-          2) `uiautomator dump` 会偶发失败（实测 6 次里 4 次），且失败时 adb 返回
+             重定向会破坏 UTF-16 输出，导致所有 text="..." 提取失败。
+          2) `uiautomator dump` 本身不稳定，会偶发失败，且失败时 adb 返回
              非零退出码、stdout 为空。必须显式容忍非零码，否则整个循环被异常打断。
         """
         last = ""
@@ -138,9 +138,9 @@ class Device:
     def dump_ui_stable(self, retries: int = 3) -> str:
         """避免读到「切题瞬间」的混合画面。
 
-        教训：最初实现是「连 dump 两次直到一致」，但单次 dump 就要 2.5-5s，
-        两次直接飙到 11-13s，把 6 秒限时彻底打爆（实测 run3）。
-        改成**零成本**的结构判据：正常一题是 6 个选项，若解析出的选项数
+        不能「连 dump 两次直到一致」：单次 dump 就要 2.5-5s，
+        两次可能超过 10s，直接打爆 6 秒限时。
+        这里用零成本的结构判据：正常一题是 6 个选项，若选项数
         明显异常（如 7 个、末项重复），才重 dump 一次。
         """
         xml = self.dump_ui()

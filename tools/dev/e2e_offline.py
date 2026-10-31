@@ -1,4 +1,5 @@
 """端到端离线验证：用真实抓屏 XML 跑完整链路（解析->判定->定位）。"""
+from _paths import ROOT
 import json
 import pathlib
 import sys
@@ -37,12 +38,12 @@ if __name__ == "__main__":
     bank = load_bank()
     print(f"词库: {len(bank.by_gloss):,} 键 / {len(bank.words):,} 词\n")
 
-    samples = sorted(pathlib.Path(r"E:\code\单词pk\samples").glob("*.xml"))
+    samples = sorted((ROOT / "samples").glob("*.xml"))
     print(f"-- 扫描 {len(samples)} 个样本 --")
     for s in samples:
         print(check(s, bank))
 
     print("\n-- 已知答案样本 --")
-    known = pathlib.Path(r"E:\code\单词pk\samples\u4.xml")
+    known = ROOT / "samples" / "u4.xml"
     if known.exists():
         print(check(known, bank, expect="living"))

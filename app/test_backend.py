@@ -96,6 +96,53 @@ check("保存坏配置被拒", r["ok"], False)
 code, r = post("/api/config", {"text": cfg})
 check("保存好配置成功", r["ok"], True)
 
+print("\n== API Key（只落本机，不进 config.toml）==")
+KEYF = pathlib.Path(main.ROOT) / "data" / "apikey.txt"
+backup = KEYF.read_text(encoding="utf-8") if KEYF.exists() else None
+try:
+    cfg_before = main.read_config()
+    r = post("/api/apikey", {"key": "sk-test-abcd1234"})[1]
+    check("保存成功", r["ok"], True)
+    check("只回末四位", r["hint"], "1234")
+    check("config.toml 仍不含密钥", "sk-test-abcd1234" in main.read_config(), False)
+    check("config.toml 未被改写", main.read_config(), cfg_before)
+
+    sm = json.loads(get("/api/config")[1])["summary"]
+    check("summary 报告已配置", sm["key_present"], True)
+    check("来源是本机文件", sm["key_source"], "file")
+    check("密钥不回传前端", "key_hint" in sm and "api_key" not in sm, True)
+    check("summary 带显示开关", sm.get("show_api_key"), False)
+
+    kv = json.loads(get("/api/apikey")[1])
+    check("默认不返回完整密钥", (kv["present"], kv["show"], kv["key"]), (True, False, ""))
+
+    if "show_api_key" in cfg_before:
+        main.write_config(cfg_before.replace("show_api_key = false", "show_api_key = true"))
+        kv = json.loads(get("/api/apikey")[1])
+        check("配置文件开关打开后返回完整密钥", kv["key"], "sk-test-abcd1234")
+        main.write_config(cfg_before)
+        check("配置已还原", main.read_config(), cfg_before)
+
+    r = post("/api/apikey", {"key": "sk-replaced-00001111"})[1]
+    check("重填成功", r["ok"], True)
+    txt = KEYF.read_text(encoding="utf-8")
+    check("旧密钥没残留", ("00001111" in txt, "abcd1234" in txt), (True, False))
+
+    check("太短被拒", post("/api/apikey", {"key": "short"})[1]["ok"], False)
+    check("含空格被拒", post("/api/apikey", {"key": "sk-abc 12345678"})[1]["ok"], False)
+
+    r = post("/api/apikey", {"key": ""})[1]
+    check("清除成功", r["ok"], True)
+    check("文件已删除", KEYF.exists(), False)
+    sm = json.loads(get("/api/config")[1])["summary"]
+    check("清除后不再来自文件", sm["key_source"] != "file", True)
+finally:
+    if backup is None:
+        KEYF.unlink(missing_ok=True)
+    else:
+        KEYF.parent.mkdir(parents=True, exist_ok=True)
+        KEYF.write_text(backup, encoding="utf-8")
+
 # 404
 try:
     get("/nope")

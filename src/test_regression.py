@@ -75,7 +75,7 @@ CASES = [
     #     当时是读到了切题瞬间的混合画面。这里锁定判定结果不许退化。 ---
     ("shock", ["vi. & vt. 游泳", "n. 震惊", "adj. 焦虑的", "n. 材料", "v. 保持", "n. 好处"], "n. 震惊"),
     ("tend", ["vi. & vt.举起", "v. 倾向", "n. 素质", "n. 鲸", "v. 包", "n. 耐心"], "v. 倾向"),
-    # --- 误判回归：run4 实测 'n.图像' 被答成 resemble（因 key '像' 是 '图像' 的单字子串）。
+    # --- 误判回归：'n.图像' 曾被答成 resemble（key '像' 是 '图像' 的单字子串）。
     #     修好后 image/picture 并列 0.45，算法应判定「不确定」返回 None（转猜），
     #     绝不能再返回 resemble。这里断言的就是「不能是 resemble」。 ---
     ("n.图像", ["image", "resemble", "picture", "scene", "structure", "advance"], None),

@@ -1,4 +1,5 @@
-﻿"""给桌面 App 截图：运行页 + 设置页。"""
+"""给桌面 App 截图：运行页 + 设置页。"""
+from _paths import ROOT
 import ctypes
 import subprocess
 import sys
@@ -8,7 +9,7 @@ from pathlib import Path
 
 from PIL import ImageGrab
 
-ROOT = Path(r"E:\code\单词pk")
+ROOT = ROOT
 PIDF = ROOT / "logs" / "app.pid"
 OUT = ROOT / "captures"
 

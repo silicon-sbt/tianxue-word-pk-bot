@@ -1,8 +1,8 @@
 """手机画面流：screenrecord(H.264) -> PyAV 解码 -> 最新帧缓存。
 
 为什么不用 screencap：
-  `adb exec-out screencap -p` 单帧实测 600-800ms（PNG 编码 + 传输 500KB-1MB），
-  这是 adb 截图协议的上限，换写法救不了（raw 输出 2.8s 更慢）。
+  `adb exec-out screencap -p` 单帧约 600-800ms（PNG 编码 + 传输 500KB-1MB），
+  这是 adb 截图协议的上限，换写法救不了（raw 输出更慢）。
   连续画面必须走视频流。
 
 为什么不用 scrcpy：
@@ -32,7 +32,7 @@ class NoSeekRaw:
     返回 True，就注册 seek 回调」。Windows 管道是 BufferedReader，
     seekable() 返回 True，但 seek(-1, SEEK_END) 会抛
       OSError [Errno 22] Invalid argument  (av/container/pyio.py)
-    实测发生在 av.open() 阶段（不是 close）。
+    这个错误出现在 av.open() 阶段（不是 close）。
     只暴露 read()、不给 seek/tell，PyAV 就不注册 seek 回调，能正常解码。
 
     注意：read() 不吞异常。管道断了必须让 OSError 冒到解码循环，
@@ -82,10 +82,9 @@ class ScreenStream:
     def _capture_size(self, serial: str) -> str:
         """按设备真实分辨率等比算 screenrecord 的 --size。
 
-        让**手机端直接编成目标宽度**（TARGET_WIDTH），解码后就不用再缩放。
-        实测：直出 420x932 是 3.28ms/帧，先出 480x1066 再缩是 8.41ms/帧，
-        快 2.6 倍（省掉 PIL resize 的 4.3ms）。
-        原先还硬编码 480x1066，换机型会拉伸或直接失败。
+        让**手机端直接编成目标宽度**（TARGET_WIDTH），解码后就不用再缩放：
+        直出目标尺寸约 3ms/帧，先出大图再缩约 8ms/帧。
+        也不能硬编码固定尺寸，换机型会拉伸或直接失败。
         """
         cached = self._sizes.get(serial)
         if cached:

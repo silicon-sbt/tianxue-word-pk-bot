@@ -5,7 +5,7 @@
 
 [bot]
 # 每题限时（秒）。用来算"还剩多少时间可以问 AI"。
-# 计分赛实测是 6 秒；如果你那边是 4 秒，就改成 4。
+# 计分赛通常是 6 秒；如果你那边是 4 秒，就改成 4。
 question_seconds = 6.0
 
 
@@ -25,12 +25,12 @@ base_url = "https://api.typesafe.ai/v1"
 model = "jev-latest"
 
 # 别把密钥写在这里——本文件是要提交到公开仓库的。
-# 已用用户级环境变量 TYPESAFE_API_KEY（配置会自己读）。
-# 也可以临时用 PK_API_KEY 覆盖。
+# 桌面版「设置 -> API Key」填的密钥保存在 data/apikey.txt（不入库）。
+# 仍然支持用户级环境变量 TYPESAFE_API_KEY / PK_API_KEY。
 api_key = ""
 
 # 单次调用上限（秒）。实际会取「这个值」和「界面剩余时间」里更小的那个。
-# 本机实测 Jev 一次约 0.8-0.9 秒。
+# Jev 单次调用约 0.8-0.9 秒。
 timeout = 1.8
 
 # 把 AI 给出的答案记进 data/learned.json，下次直接命中、不再请求。
@@ -42,3 +42,9 @@ remember = true
 # 控分：让最终正确率贴近目标，不至于高得扎眼。
 enabled = false
 target_accuracy = 0.70 # 目标正确率，0-1（写 70 也会被当成 70%）
+
+
+[ui]
+# API Key 在设置页默认隐藏（只显示末四位）。
+# 改成 true，输入框会直接显示完整密钥（只在本机页面上，不会外传）。
+show_api_key = false

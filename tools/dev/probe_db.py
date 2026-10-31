@@ -1,8 +1,9 @@
 """探查 ed.db 结构，找出 单词->中文释义 的映射。"""
+from _paths import ROOT
 import sqlite3
 import pathlib
 
-DB = pathlib.Path(r"E:\code\单词pk\data\ed.db")
+DB = ROOT / "data" / "ed.db"
 con = sqlite3.connect(DB)
 
 print("=== tables ===")

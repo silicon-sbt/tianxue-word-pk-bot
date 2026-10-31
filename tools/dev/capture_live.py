@@ -1,4 +1,5 @@
 """采集实时屏幕（exec-out 直读，避免 PowerShell 破坏编码），存为样本 XML。"""
+from _paths import ROOT
 import pathlib
 import subprocess
 import sys
@@ -7,7 +8,7 @@ import time
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from adb_driver import ADB, Device  # noqa: E402
 
-OUT = pathlib.Path(r"E:\code\单词pk\samples")
+OUT = ROOT / "samples"
 OUT.mkdir(exist_ok=True)
 
 dev = Device()

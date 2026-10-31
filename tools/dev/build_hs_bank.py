@@ -7,6 +7,7 @@
 与词典措辞不一致（'宏伟的' vs '雄伟的'），必须靠反向相似度匹配。
 """
 from __future__ import annotations
+from _paths import ROOT
 
 import json
 import pathlib
@@ -17,8 +18,8 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from build_wordbank import split_paraphrase  # noqa: E402
 
-DB = pathlib.Path(r"E:\code\单词pk\data\ed.db")
-OUT = pathlib.Path(r"E:\code\单词pk\data\wordbank.json")
+DB = ROOT / "data" / "ed.db"
+OUT = ROOT / "data" / "wordbank.json"
 
 # 只保留适合 PK 的单词形态：纯字母（可带连字符/点），长度 2..20
 _WORD_OK = re.compile(r"^[A-Za-z][A-Za-z'’\-\. ]{1,19}$")

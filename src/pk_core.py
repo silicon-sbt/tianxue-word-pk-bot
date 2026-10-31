@@ -7,7 +7,7 @@
 
 设计约束：
   - 纯离线判定，不依赖网络（PK 有 5s 倒计时，网络往返太慢）
-  - UI XML 直接解析，不做 OCR（实测题目文本在无障碍树里）
+  - UI XML 直接解析，不做 OCR（题目文本本身就在无障碍树里）
 """
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from typing import Iterable
 
 # 题目节点在屏幕顶部，选项节点在下方。
-# 实测 1260x2800：题目 y≈766，选项 y≈1192~2264。
+# 以 1260x2800 的屏幕为例：题目 y≈766，选项 y≈1192~2264。
 # 用相对阈值而不是硬编码像素，适配不同分辨率。
 QUESTION_Y_RATIO = 0.35
 
@@ -90,8 +90,9 @@ def _iter_nodes(root: ET.Element) -> Iterable[ET.Element]:
 def decode_dump(data: bytes | str) -> str:
     """把 uiautomator dump 的原始内容解码成 str。
 
-    实测坑：`adb shell cat` 在本机返回 UTF-16LE（每个 ASCII 字符后跟一个 NUL），
-    按 UTF-8 硬解会得到带 \\x00 的乱码，所有 text="..." 都匹配不到。
+    不同 adb/系统组合可能返回 UTF-16LE（每个 ASCII 字符后跟一个 NUL）。
+    按 UTF-8 硬解会得到带 \\x00 的乱码，所有 text="..." 都匹配不到，
+    所以这里按 BOM 和字节分布判断真实编码。
     """
     if isinstance(data, bytes):
         if data[:2] in (b"\xff\xfe", b"\xfe\xff"):
@@ -185,7 +186,7 @@ def parse_screen(xml_text: str | bytes) -> Question | None:
     if prompt_node is None or not raw_options:
         return None
 
-    # 去重：题目切换瞬间 dump 会把新旧两题的选项混在一起（实测出现过 7 个且末项重复）。
+    # 去重：题目切换瞬间，dump 会把新旧两题的选项混在一起（可能出现 7 个且末项重复）。
     # 同文本只保留第一个（坐标更新的那个通常是新题）。
     dedup: list[Option] = []
     seen: set[str] = set()
@@ -198,10 +199,9 @@ def parse_screen(xml_text: str | bytes) -> Question | None:
     raw_options = dedup
 
     # ---- 准入校验：必须是「正在答题」的画面 ----
-    # 实测坑：一局结束后的结算页会被误判成题目——
-    #   prompt='宋博涛'（人名）、选项里混进 'Score'、没有倒计时。
-    # 后果是白调一次 AI，还在结算页上乱点（可能点到「再来一局」）。
-    # 两个判据都来自实机样本：真实答题页一定有倒计时，且选项恰好 6 个左右。
+    # 结算页的文本结构很像题目：顶部有人名，选项区混进 'Score' 等字样，
+    # 但没有倒计时。若不加判断，会在结算页上误调 AI、误点击（可能点到「再来一局」）。
+    # 两条判据来自真实答题页：一定有倒计时，且选项约 6 个。
     if seconds_left is None:
         return None
     if not (2 <= len(raw_options) <= 8):
@@ -232,7 +232,7 @@ _MULTI_POS_RE = re.compile(
 def split_prompt(prompt: str) -> tuple[str | None, str]:
     """'adj.宏伟的' -> ('adj.', '宏伟的')；'鹰' -> (None, '鹰')
 
-    实测坑：选项里会出现复合词性前缀，如 'vi. & vt.举起'、'vi.&vt. 举起'。
+    选项里可能出现复合词性前缀，如 'vi. & vt.举起'、'vi.&vt. 举起'。
     只剥离「词性 + 可选连字符」这一段，且必须后面还有释义，否则会把
     'vt. & vi.' 整段吃掉、留下 '&' 这种垃圾。
     """
@@ -302,9 +302,9 @@ class WordBank:
                     return opt_map[w]
 
         # 2) 包含匹配：收集所有候选，按匹配长度取最优。
-        #    实测坑：key '像'（resemble）是 norm_gloss '图像' 的子串，
-        #    会被当成唯一候选直接返回，导致 '图像' 答成 resemble。
-        #    因此要求「较短的那个至少 2 个字」，单字子串不算匹配。
+        #    注意：单字义项（如 '像'）会命中任何含该字的释义（如 '图像'），
+        #    若直接当唯一候选返回，会把 '图像' 答成 resemble。
+        #    因此要求较短的一方至少 2 个字，单字子串不算匹配。
         cands: dict[str, int] = {}
         for key, words in self.by_gloss.items():
             if not key or len(key) < 2:
@@ -445,10 +445,9 @@ def _sense_score(gloss: str, sense_gloss: str,
                  pos: str | None, sense_pos: str | None) -> float:
     """单条义项打分：相似度 + 词性加权。
 
-    针对实测误判 'n.图像' -> resemble（义项仅 '像'，单字）：
-    单字义项与双字题干的重合属于「子串巧合」，不是语义相同。
-    这里对「义项只有 1 个实义字、而题干有 2+ 字」的情况降权，
-    但**不动全局相似度公式**——那样会连带压低正确项（实测会丢 3 题）。
+    单字义项（如 '像'）与双字题干（如 '图像'）的重合只是子串巧合，
+    不是语义相同。这里对「义项只有 1 个实义字、题干有 2+ 字」的情况降权。
+    降权只作用在单条义项上：直接改全局相似度会连带压低正确项。
     """
     s = sense_similarity(gloss, sense_gloss)
     if s <= 0:
@@ -494,13 +493,12 @@ def _chars(s: str) -> set[str]:
 def sense_similarity(a: str, b: str) -> float:
     """中文释义相似度 [0,1]。用 Jaccard + 包含关系 + 同义字表。
 
-    实测三类难题：
-      1) '宏伟的' vs '雄伟的'  -> 共享'伟'字，靠 margin 规则救回
+    三类典型情况：
+      1) '宏伟的' vs '雄伟的'  -> 共享'伟'字，靠领先裕度规则接受
       2) '异常的' vs '不寻常的' -> 汉字零交集，靠同义词归一化
-      3) **陷阱**：'像' vs '图像' -> '像' 是 '图像' 的子串，旧实现给 0.75，
-         导致 resemble（像）压过 image（影像/形象），实测造成误判。
-         修正：短释义（≤1 个实义字）做包含匹配时**不给加成**，
-         因为单字与双字词的子串关系没有语义必然性。
+      3) 单字与双字词的子串关系（'像' vs '图像'）没有语义必然性：
+         短释义（≤1 个实义字）做包含匹配时不给加成，避免把
+         resemble（像）判成 image（图像）。
     """
     ca, cb = _chars(a), _chars(b)
     if not ca or not cb:
@@ -527,7 +525,7 @@ def sense_similarity(a: str, b: str) -> float:
 
 # 教材释义 vs 通用词典释义 的常见用词差异。
 # 这两套词表不同源（PK 用教材版，ed.db 是通用版），必须人工搭桥。
-# 只收「实测/明显」的同义替换，不猜。
+# 只收明确、常见的同义替换，不做推测。
 _SYNONYM_MAP = {
     "异常": "不寻常", "反常": "不寻常", "奇特": "不寻常",
     "寻常": "普通", "平常": "普通", "一般": "普通",

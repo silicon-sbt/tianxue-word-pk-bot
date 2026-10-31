@@ -1,4 +1,5 @@
 """查 tend 误判：'vi. & vt.举起' 是怎么拿到分的。"""
+from _paths import ROOT
 import json
 import pathlib
 import sys
@@ -7,7 +8,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import split_prompt, sense_similarity  # noqa: E402
 
 data = json.loads(
-    pathlib.Path(r"E:\code\单词pk\data\wordbank.json").read_text(encoding="utf-8"))["words"]
+    (ROOT / "data" / "wordbank.json").read_text(encoding="utf-8"))["words"]
 
 opt = "vi. & vt.举起"
 print(f"选项原文: {opt!r}")

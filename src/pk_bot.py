@@ -41,7 +41,7 @@ UNKNOWN = ROOT / "data" / "unknown.jsonl"
 LOG = ROOT / "logs" / "live_out.txt"
 STDERR_LOG = ROOT / "logs" / "stderr.txt"
 
-# 题干框（1260x2800 实测）
+# 题干框（按 1260x2800 屏幕标定）
 PROMPT_RECT = (340, 690, 920, 850)
 
 
@@ -190,7 +190,7 @@ class Runner:
         """兜底猜测：语义最接近的那个，实在没有就随机。
 
         为什么不是纯随机：即使相似度低于阈值，第一名往往仍是最相关的候选
-        （实测 '宏伟的' vs '雄伟的' 只有 0.45，但第一名就是正确答案）。
+        （例如 '宏伟的' 与 '雄伟的' 相似度只有 0.45，但第一名就是正确答案）。
         """
         if not q.options:
             return None

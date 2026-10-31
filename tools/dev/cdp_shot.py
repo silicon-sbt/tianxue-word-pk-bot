@@ -1,4 +1,5 @@
 """通过 CDP 点击并截图真实页面（验证设置页渲染）。"""
+from _paths import ROOT
 import base64
 import json
 import os
@@ -12,7 +13,7 @@ import websocket
 EDGE = r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 URL = "http://127.0.0.1:8791/"
 PORT = 9336
-OUT = Path(r"E:\code\单词pk\captures")
+OUT = ROOT / "captures"
 
 
 class CDP:

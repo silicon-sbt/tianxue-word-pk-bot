@@ -5,17 +5,17 @@ import sys
 import time
 from pathlib import Path
 
-ROOT = Path(r"E:\code\单词pk")
+ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "app"))
+sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "tools"))
 
 import av
 from PIL import Image
 
+from adb_driver import ADB
 from adb_parse import pick_serial
 from screen_stream import NoSeekRaw
-
-ADB = r"C:\Users\A\AppData\Local\Android\Sdk\platform-tools\adb.exe"
 
 
 def run(size: str, seconds: float = 6.0):

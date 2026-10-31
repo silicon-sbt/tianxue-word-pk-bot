@@ -1,11 +1,12 @@
 """诊断：为什么 '宏伟的'->grand / '活的'->living 查不到。看 ed.db 里真实存什么。"""
+from _paths import ROOT
 import sqlite3
 import pathlib
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
-DB = pathlib.Path(r"E:\code\单词pk\data\ed.db")
+DB = ROOT / "data" / "ed.db"
 con = sqlite3.connect(DB)
 
 for w in ("grand", "living", "live", "eagle", "magnificent"):

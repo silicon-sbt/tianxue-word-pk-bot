@@ -1,8 +1,9 @@
 """检查 index.html 里 JS 引用的元素是否都存在于 HTML。"""
+from _paths import ROOT
 import pathlib
 import re
 
-h = pathlib.Path(r"E:\code\单词pk\app\index.html").read_text(encoding="utf-8")
+h = (ROOT / "app" / "index.html").read_text(encoding="utf-8")
 i = h.find("<script>")
 js = h[i:]
 

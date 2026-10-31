@@ -16,6 +16,7 @@ SUITES = [
     ("功能单测（配置/控分/AI解析/超时/回填）", "src/test_features.py"),
     ("AI 联网路径（本地假接口）", "src/test_ai_http.py"),
     ("桌面后端（HTTP 接口）", "app/test_backend.py"),
+    ("桌面启动器（窗口匹配/回环/端口）", "app/test_launcher.py"),
     ("画面流集成（假 adb 注入）", "app/test_screen_stream.py"),
 ]
 

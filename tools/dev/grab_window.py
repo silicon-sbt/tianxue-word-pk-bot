@@ -1,3 +1,4 @@
+from _paths import ROOT
 import ctypes, sys
 from ctypes import wintypes
 from pathlib import Path
@@ -5,7 +6,7 @@ from PIL import Image
 
 user32 = ctypes.windll.user32
 gdi32 = ctypes.windll.gdi32
-OUT = Path(r"E:\code\单词pk\captures")
+OUT = ROOT / "captures"
 
 
 class RECT(ctypes.Structure):

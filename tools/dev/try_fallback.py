@@ -12,6 +12,7 @@
 找「共享义项」的候选。
 """
 from __future__ import annotations
+from _paths import ROOT
 
 import json
 import pathlib
@@ -21,7 +22,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import sense_similarity, split_prompt  # noqa: E402
 
 data = json.loads(
-    pathlib.Path(r"E:\code\单词pk\data\wordbank.json").read_text(encoding="utf-8"))["words"]
+    (ROOT / "data" / "wordbank.json").read_text(encoding="utf-8"))["words"]
 
 
 def senses(word: str):

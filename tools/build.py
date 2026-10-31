@@ -7,12 +7,13 @@
   pk_release\TianxuePK-Portable-vX.Y.Z.zip
 
 为什么要有这个脚本而不是手敲命令：
-  复制运行时资源时**目录创建顺序**很容易错（先复制文件后建目录会把目录变成文件，
-  实测踩过），这里统一按「先建目录、再放文件」的顺序做。
+  复制运行时资源时**目录创建顺序**很容易错（先复制文件后建目录会把目录变成文件），
+  这里统一按「先建目录、再放文件」的顺序做。
 """
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import sys
@@ -22,11 +23,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DIST = ROOT / "dist" / "TianxuePK"
-# 产物必须放纯 ASCII 路径：实测安装包放在含中文的目录（如 单词pk）下运行，
-# Inno 初始化会失败（退出码 1，连 /LOG 都不生成）；换英文目录就正常。
-RELEASE = Path(r"E:\pk_release")
+# 产物必须放纯 ASCII 路径：安装包放在含中文的目录（如 单词pk）下运行时，
+# Inno 初始化会失败（退出码 1，连 /LOG 都不生成）；换英文目录即可。
+# 可以用环境变量 PK_RELEASE_DIR 指到自己的英文目录。
+RELEASE = Path(os.environ.get("PK_RELEASE_DIR", r"E:\pk_release"))
 PY = sys.executable
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 
 # 需要跟 exe 放在一起的运行时资源（源路径 -> 目标相对路径）
 RUNTIME_FILES = [
@@ -66,7 +68,7 @@ def copy_runtime() -> None:
     """复制运行时资源。
 
     顺序很重要：**先建目录再复制文件**。反过来会把目录创建成同名文件，
-    之后 mkdir 抛 FileExistsError（实测踩过，进程启动即死）。
+    之后 mkdir 抛 FileExistsError，程序启动即失败。
     """
     print("\n[2/4] 复制运行时资源 ...")
     DIST.mkdir(parents=True, exist_ok=True)

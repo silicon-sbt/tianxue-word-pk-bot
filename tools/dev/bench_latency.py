@@ -1,4 +1,5 @@
 """测一轮「dump -> 解析 -> 定位」的真实耗时。4s 答题时间下这是生死线。"""
+from _paths import ROOT
 import pathlib
 import re
 import sys
@@ -37,5 +38,5 @@ print(f"\ninput tap 往返: {time.perf_counter()-t0:.3f}s")
 
 # 单独测 screencap
 t0 = time.perf_counter()
-dev.screenshot(r"E:\code\单词pk\captures\bench.png")
+dev.screenshot(ROOT / "captures" / "bench.png")
 print(f"screencap 往返: {time.perf_counter()-t0:.3f}s")

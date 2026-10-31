@@ -1,6 +1,6 @@
 """adb devices 输出解析 —— 唯一实现。
 
-实测坑：输出里序列号与状态的间隔**不是制表符，是空格填充**：
+adb devices 的输出里，序列号与状态的间隔不是制表符，而是空格填充：
   192.168.0.104:35957    device product:PD2403 ...
 而 mDNS 无线序列号本身**含空格**：
   adb-10AE7X036B0018B-kFzd2o (2)._adb-tls-connect._tcp device product:...
@@ -62,8 +62,8 @@ def pick_serial(adb: str) -> str:
 
 
 if __name__ == "__main__":
-    import sys
-    ADB = r"C:\Users\A\AppData\Local\Android\Sdk\platform-tools\adb.exe"
+    import shutil
+    ADB = shutil.which("adb") or "adb"
     rows = list_devices(ADB)
     print(f"设备 {len(rows)} 个:")
     for d in rows:

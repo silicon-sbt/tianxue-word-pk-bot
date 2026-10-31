@@ -1,8 +1,9 @@
 """查 ed.db 里有没有 '异常' 相关义项，判断是词库缺失还是别名问题。"""
+from _paths import ROOT
 import sqlite3
 import pathlib
 
-con = sqlite3.connect(r"E:\code\单词pk\data\ed.db")
+con = sqlite3.connect(ROOT / "data" / "ed.db")
 
 for kw in ("异常", "不寻常", "反常", "独特"):
     print(f"=== 含 {kw} 的条目 ===")

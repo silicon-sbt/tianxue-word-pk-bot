@@ -1,4 +1,5 @@
 """查误判根因：shock->游泳、tend->举起 为什么会匹配上。"""
+from _paths import ROOT
 import json
 import pathlib
 import sys
@@ -7,7 +8,7 @@ sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import sense_similarity, split_prompt, _synonym_normalize  # noqa: E402
 
 data = json.loads(
-    pathlib.Path(r"E:\code\单词pk\data\wordbank.json").read_text(encoding="utf-8"))["words"]
+    (ROOT / "data" / "wordbank.json").read_text(encoding="utf-8"))["words"]
 
 CASES = [
     ("shock", ['vi. & vt. 游泳', 'n. 震惊', 'adj. 焦虑的', 'n. 材料', 'v. 保持', 'n. 好处']),

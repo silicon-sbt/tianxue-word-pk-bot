@@ -11,6 +11,7 @@
 """
 from __future__ import annotations
 
+import atexit
 import json
 import os
 import subprocess
@@ -217,13 +218,16 @@ def config_summary() -> dict:
     ai = d.get("ai") if isinstance(d.get("ai"), dict) else {}
     sc = d.get("score") if isinstance(d.get("score"), dict) else {}
     bt = d.get("bot") if isinstance(d.get("bot"), dict) else {}
+    ui = d.get("ui") if isinstance(d.get("ui"), dict) else {}
     try:
         from config import load as load_config
         c = load_config()
         key_ok = bool(c.ai.api_key)
         key_len = len(c.ai.api_key)
+        key_hint = c.ai.api_key[-4:] if key_ok and key_len >= 8 else ""
+        key_source = getattr(c, "key_source", "") or "none"
     except Exception:  # noqa: BLE001
-        key_ok, key_len = False, 0
+        key_ok, key_len, key_hint, key_source = False, 0, "", "none"
     return {
         "ai_enabled": bool(ai.get("enabled")),
         "ai_mode": ai.get("mode", "chat"),
@@ -232,10 +236,66 @@ def config_summary() -> dict:
         "ai_remember": ai.get("remember", True),
         "key_present": key_ok,
         "key_len": key_len,
+        "key_hint": key_hint,
+        "key_source": key_source,
+        "show_api_key": bool(ui.get("show_api_key")),
         "score_enabled": bool(sc.get("enabled")),
         "score_target": sc.get("target_accuracy", 0.7),
         "question_seconds": bt.get("question_seconds", 6.0),
     }
+
+
+def api_key_view() -> dict:
+    """给设置页用的密钥视图。
+
+    默认只回末四位；只有 config.toml 里 `[ui] show_api_key = true` 才回完整密钥。
+    页面只跑在本机回环上，但默认不把密钥放进 DOM，避免截图/投屏时泄漏。
+    """
+    try:
+        from config import load as load_config
+        c = load_config()
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": str(e), "present": False, "show": False,
+                "key": "", "hint": "", "source": "none"}
+    key = c.ai.api_key or ""
+    show = bool(c.get("ui", "show_api_key", False))
+    return {
+        "ok": True,
+        "present": bool(key),
+        "show": show,
+        "key": key if show else "",
+        "hint": key[-4:] if len(key) >= 8 else "",
+        "source": getattr(c, "key_source", "none") or "none",
+    }
+
+
+def save_api_key(key: str) -> dict:
+    """保存 / 清除界面填的 API Key。
+
+    只写 data/apikey.txt（不入库），不碰 config.toml。
+    返回值永远不带完整密钥，只给末四位，避免界面/日志把密钥泄漏出去。
+    """
+    key = (key or "").strip()
+    try:
+        from config import KEY_FILE
+    except Exception as e:  # noqa: BLE001
+        return {"ok": False, "msg": f"配置模块不可用：{e}"}
+    try:
+        if not key:
+            KEY_FILE.unlink(missing_ok=True)
+            return {"ok": True, "msg": "已清除本机保存的密钥", "hint": "", "source": ""}
+        if len(key) < 8:
+            return {"ok": False, "msg": "密钥太短，至少 8 位"}
+        if any(ch.isspace() for ch in key):
+            return {"ok": False, "msg": "密钥里不能有空格或换行"}
+        KEY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        # 重填即替换：先写临时文件再原子替换，旧密钥不会残留
+        tmp = KEY_FILE.with_suffix(".tmp")
+        tmp.write_text(key + "\n", encoding="utf-8")
+        os.replace(tmp, KEY_FILE)
+        return {"ok": True, "msg": "已保存到本机", "hint": key[-4:], "source": "file"}
+    except OSError as e:
+        return {"ok": False, "msg": f"写入失败：{e}"}
 
 
 # ------------------------------------------------------------------ 统计
@@ -320,7 +380,7 @@ def start_screen() -> None:
     try:
         from screen_stream import ScreenStream
     except Exception as e:  # noqa: BLE001 - 缺 av 依赖时降级，不影响主功能
-        # 打包后没有控制台，光 print 用户看不到；写进 crash.log
+        # 打包后没有控制台，光 print 用户看不到；写进日志文件
         import traceback
         try:
             (ROOT / "logs" / "screen_error.log").write_text(
@@ -332,6 +392,20 @@ def start_screen() -> None:
         return
     _stream = ScreenStream(_adb(), _pick_serial)
     _stream.start()
+    # 程序退出时主动停流：否则 adb / 手机端 screenrecord 可能变成孤儿进程，
+    # 下次启动会抢不到录制，表现为「有设备但一直没有画面」。
+    atexit.register(stop_screen)
+
+
+def stop_screen() -> None:
+    global _stream
+    s = _stream
+    _stream = None
+    if s is not None:
+        try:
+            s.stop()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 def screen_jpeg() -> bytes:
@@ -491,6 +565,8 @@ class Handler(BaseHTTPRequestHandler):
                                "device": _device_status(), "tail": _tail(120)})
         if p == "/api/config":
             return self._json({"text": read_config(), "summary": config_summary()})
+        if p == "/api/apikey":
+            return self._json(api_key_view())
         if p == "/api/conn":
             return self._json(conn_scan())
         if p == "/api/screen.mjpeg":
@@ -592,6 +668,7 @@ class Handler(BaseHTTPRequestHandler):
             "/api/stop": stop_bot,
             "/api/config": lambda: write_config(b.get("text", "")),
             "/api/config/check": lambda: check_config(b.get("text", "")),
+            "/api/apikey": lambda: save_api_key(b.get("key", "")),
             "/api/wifi/pair": lambda: conn_wifi_pair(b.get("addr", ""), b.get("code", "")),
             "/api/wifi/connect": lambda: conn_wifi_connect(b.get("addr", "")),
             "/api/wifi/disconnect": conn_wifi_disconnect,
@@ -603,9 +680,26 @@ class Handler(BaseHTTPRequestHandler):
         self._json(fn())
 
 
+class _Server(ThreadingHTTPServer):
+    """静默处理客户端提前断开。
+
+    前端轮询 /api/status 超时后会关掉连接，服务端可能正好在写响应。
+    socketserver 默认会把 BrokenPipe/ConnectionAborted 打成整段 traceback
+    输出到 stderr。这不是程序错误，但会干扰日志与冒烟测试的异常判定。
+    """
+
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        exc = sys.exc_info()[1]
+        if isinstance(exc, (BrokenPipeError, ConnectionResetError,
+                            ConnectionAbortedError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
+
+
 def serve():
-    srv = ThreadingHTTPServer((HOST, PORT), Handler)
-    srv.daemon_threads = True
+    srv = _Server((HOST, PORT), Handler)
     srv.serve_forever()
 
 
@@ -627,5 +721,19 @@ def main() -> None:
     webview.start(debug=False)
 
 
+def serve_only() -> None:
+    """只跑后端与画面流，不开窗口。冒烟测试用，不依赖 pywebview。"""
+    threading.Thread(target=serve, daemon=True).start()
+    start_screen()
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        pass
+
+
 if __name__ == "__main__":
-    main()
+    if "--serve-only" in sys.argv:
+        serve_only()
+    else:
+        main()

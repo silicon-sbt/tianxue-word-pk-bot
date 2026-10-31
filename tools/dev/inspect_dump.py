@@ -1,10 +1,11 @@
 """看 dump 的原始结构统计，判断内容为何不可见。"""
+from _paths import ROOT
 import re
 import sys
 from collections import Counter
 from pathlib import Path
 
-p = Path(sys.argv[1] if len(sys.argv) > 1 else r"E:\code\单词pk\samples\live2.xml")
+p = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "samples" / "live2.xml")
 raw = p.read_text(encoding="utf-8", errors="replace")
 
 print("file:", p)

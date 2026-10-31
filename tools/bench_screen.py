@@ -13,10 +13,12 @@ import time
 import urllib.request
 from pathlib import Path
 
-ROOT = Path(r"E:\code\单词pk")
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
 BASE = "http://127.0.0.1:8791"
 PY = sys.executable
-ADB = r"C:\Users\A\AppData\Local\Android\Sdk\platform-tools\adb.exe"
+
+from adb_driver import ADB  # noqa: E402
 
 
 def meta():

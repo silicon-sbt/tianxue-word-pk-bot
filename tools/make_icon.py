@@ -10,7 +10,7 @@ import pathlib
 
 from PIL import Image, ImageDraw, ImageFont
 
-OUT = pathlib.Path(r"E:\code\单词pk\assets")
+OUT = pathlib.Path(__file__).resolve().parent.parent / "assets"
 OUT.mkdir(parents=True, exist_ok=True)
 
 SIZES = [16, 24, 32, 48, 64, 128, 256]

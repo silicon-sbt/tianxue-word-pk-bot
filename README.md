@@ -9,9 +9,9 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D4?logo=windows&logoColor=white)]()
 [![ADB](https://img.shields.io/badge/Requires-ADB-3DDC84?logo=android&logoColor=white)]()
 [![License](https://img.shields.io/badge/License-MIT-3DA639?logo=opensourceinitiative&logoColor=white)](LICENSE)
-[![Tests](https://img.shields.io/badge/Tests-7%20suites%20%C2%B7%2039%20cases-brightgreen)]()
+[![Tests](https://img.shields.io/badge/Tests-8%20suites-brightgreen)]()
 
-[![Version](https://img.shields.io/badge/Version-v1.0.0-1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases/latest)
+[![Version](https://img.shields.io/badge/Version-v1.1.0-1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/silicon-sbt/tianxue-word-pk-bot/total?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/releases)
 [![Stars](https://img.shields.io/github/stars/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/stargazers)
 [![Last Commit](https://img.shields.io/github/last-commit/silicon-sbt/tianxue-word-pk-bot?color=1D1D1F)](https://github.com/silicon-sbt/tianxue-word-pk-bot/commits)
@@ -46,8 +46,8 @@ dump 屏幕(3.5s) -> 解析题面+选项+实时坐标 -> 离线判定(1.8ms) -> 
 
 | 文件 | 大小 | 说明 |
 |---|---|---|
-| `TianxuePK-Setup-v1.0.0.exe` | 32 MB | 安装包，双击安装，不需要管理员权限 |
-| `TianxuePK-Portable-v1.0.0.zip` | 43 MB | 便携版，解压即用，不写注册表 |
+| `TianxuePK-Setup-v1.1.0.exe` | 32 MB | 安装包，双击安装，不需要管理员权限 |
+| `TianxuePK-Portable-v1.1.0.zip` | 43 MB | 便携版，解压即用，不写注册表 |
 
 装好后双击图标，会打开一个独立窗口：
 
@@ -227,13 +227,16 @@ enabled = true # 本地判不出来时交给 AI 兜底
 mode = "jev" # jev = TypeSafe 官方；chat = 任意 OpenAI 兼容接口
 base_url = "https://api.typesafe.ai/v1"
 model = "jev-latest"
-api_key = "" # 用环境变量 TYPESAFE_API_KEY，别写进文件
+api_key = "" # 留空即可；桌面版可在「设置 -> API Key」里填，存本机 data/apikey.txt
 timeout = 1.8 # 单次调用上限，实际取它和界面剩余时间里更小的
 remember = true # 记住答案，同一个词只问一次
 
 [score]
 enabled = false
 target_accuracy = 0.70 # 目标正确率
+
+[ui]
+show_api_key = false # 设置页默认只显示末四位；改 true 可直接看到完整密钥
 ```
 
 ### AI 兜底（`[ai]`）
@@ -295,6 +298,9 @@ model = "deepseek-chat"
 
 </details>
 
+桌面版的「设置 → API Key」填完即用，保存在 `data/apikey.txt`（不入库）。
+默认只显示末四位，重填即替换；`[ui] show_api_key = true` 时才在输入框里显式显示。
+
 ### 控分（`[score]`）
 
 让最终正确率贴近目标，不至于高得扎眼（同场对手实测 66%）。
@@ -341,6 +347,7 @@ src/                         核心逻辑
  test_screens.py             非答题页不能误判成题目
  test_features.py            配置 / 控分 / AI解析 / 超时预算
  test_ai_http.py             AI 联网路径联调（本地假接口）
+ test_launcher.py            启动器：窗口匹配 / 回环直连 / 端口归属
 
 data/
  wordbank.json               词库：14,030 词 / 42,942 义项
@@ -438,7 +445,8 @@ python -X utf8 src/test_parse.py        # 解析器单测
 python -X utf8 src/test_screens.py      # 结算页/房间页不能误判成题目
 python -X utf8 src/test_features.py     # 配置 / 控分 / AI解析 / 超时预算 / 答案回填
 python -X utf8 src/test_ai_http.py      # AI 联网路径（起本地假接口，真实 HTTP）
-python -X utf8 app/test_backend.py      # 桌面后端 HTTP 接口
+python -X utf8 app/test_backend.py      # 桌面后端 HTTP 接口（含 API Key 保存/清除）
+python -X utf8 app/test_launcher.py     # 启动器：窗口匹配 / 回环直连 / 端口归属
 python -X utf8 app/test_screen_stream.py # 画面流（注入假 adb，不依赖真机）
 ```
 

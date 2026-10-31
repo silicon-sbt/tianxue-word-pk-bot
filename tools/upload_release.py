@@ -1,10 +1,10 @@
 """上传 Release 附件：直连真实 IP + 长重试。
 
-背景（本机实测）：
-  1. DNS 把 github 域名污染到 28.0.0.x，那批 IP 传大文件必被 reset。
-  2. 用 DoH 查到真实 IP（20.205.243.161）后直连，小文件 100% 成功，
-     大文件仍会中途断 —— 是运营商对长连接的限制，不是 GitHub 的问题。
-  3. GitHub 的 release asset 上传**不支持 Content-Range 断点续传**，
+背景：
+  1. 部分网络会把 github 域名解析到 28.0.0.x 的假地址，传大文件必被重置。
+  2. 用 DoH 查到真实 IP 后直连，小文件可以稳定上传，
+     大文件仍可能中途断开——这是运营商对长连接的限制，不是 GitHub 的问题。
+  3. GitHub 的 release asset 上传不支持 Content-Range 断点续传，
      所以大文件只能整体重试，或切块传。
 
 策略：
@@ -24,7 +24,7 @@ import sys
 import time
 
 REPO = "silicon-sbt/tianxue-word-pk-bot"
-TAG = "v1.0.0"
+TAG = "v1.1.0"
 UPLOAD_HOST = "uploads.github.com"
 CHUNK_MB = 4
 RETRIES = 8

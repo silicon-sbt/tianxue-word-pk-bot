@@ -1,4 +1,5 @@
 """诊断未匹配题：'adj.异常的' -> unusual 为什么查不到。"""
+from _paths import ROOT
 import json
 import pathlib
 import sys
@@ -6,7 +7,7 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).parent))
 from pk_core import sense_similarity, split_prompt  # noqa: E402
 
-BANK = pathlib.Path(r"E:\code\单词pk\data\wordbank.json")
+BANK = ROOT / "data" / "wordbank.json"
 data = json.loads(BANK.read_text(encoding="utf-8"))["words"]
 
 gloss, opts = "异常的", ["register", "statue", "clear", "unusual", "elderly", "originality"]

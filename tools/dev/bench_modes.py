@@ -7,6 +7,7 @@
 所以走 screencap + 图像识别（模板/差分），或「先截图预判」。
 这里先精确测 screencap 的端到端耗时分布，并验证 exec-out 直读。
 """
+from _paths import ROOT
 import pathlib
 import statistics
 import subprocess
@@ -18,7 +19,7 @@ from adb_driver import ADB, Device  # noqa: E402
 
 dev = Device()
 dev.ensure_connected()
-OUT = pathlib.Path(r"E:\code\单词pk\captures")
+OUT = ROOT / "captures"
 OUT.mkdir(exist_ok=True)
 
 # 1) screencap 走 exec-out 直读字节（不落 sdcard，省一次往返）

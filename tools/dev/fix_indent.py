@@ -6,10 +6,11 @@
 难点：原文件 4 空格缩进，压扁后 1 空格/层 -> 乘 4 即还原。
 先检测最小非零缩进，再统一放大。
 """
+from _paths import ROOT
 import pathlib
 import re
 
-ROOT = pathlib.Path(r"E:\code\单词pk")
+ROOT = ROOT
 
 
 def detect_unit(lines: list[str]) -> int:
